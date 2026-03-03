@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Stride — Enterprise Task Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 /* ===== RESET & ROOT ===== */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -103,7 +104,7 @@ input,textarea,select{font-family:inherit;outline:none}
 .view-tab.active{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 
 /* ===== CONTENT AREA ===== */
-.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:20px;position:relative}
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:20px;position:relative;min-height:0}
 .content.kanban-mode{overflow-y:hidden;padding:16px;display:flex;flex-direction:column}
 
 /* ===== ALL-TASKS SUMMARY ===== */
@@ -221,7 +222,7 @@ input,textarea,select{font-family:inherit;outline:none}
 .gcal-day-num{font-size:22px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%}
 .gcal-day-num.today{background:var(--accent);color:#fff}
 .gcal-day-lbl{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
-.gcal-body{display:flex;overflow-y:auto;max-height:400px}
+.gcal-body{display:flex;overflow-y:auto;max-height:640px}
 .gcal-time-col{width:52px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface)}
 .gcal-time-slot{height:48px;display:flex;align-items:flex-start;padding-top:4px;padding-right:6px;font-size:10px;color:var(--text3);text-align:right;border-bottom:1px solid var(--border);box-sizing:border-box;justify-content:flex-end}
 .gcal-grid{flex:1;display:grid;position:relative;overflow:hidden}
@@ -542,7 +543,15 @@ let state = {
     groupBy: 'status', // 'status' | 'company' | 'project'
     columns: null, // null = auto from groupBy
   },
+  gcalEvents: [],
+  gcalCalendarId: 'primary',
 };
+
+// Google Calendar API configuration
+const GCAL_CLIENT_ID = '301893018570-ue6s8q8n0rhjv1lgb3732adv4nu93td9.apps.googleusercontent.com';
+const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly';
+let _gcalTokenClient = null;
+let _gcalAccessToken = null;
 
 let ui = {
   view: 'all',
@@ -681,7 +690,8 @@ function renderSidebar(){
         <span class="nav-label" style="font-weight:600">${esc(c.name)}</span>
         ${taskCount?`<span class="nav-badge">${taskCount}</span>`:''}
         <span class="nav-chevron ${isExpC?'open':''}">›</span>
-        <button class="add-btn-inline" onclick="event.stopPropagation();openModal('addProject','${c.id}')">＋</button>
+        <button class="add-btn-inline" onclick="event.stopPropagation();openModal('addProject','${c.id}')" title="プロジェクト追加">＋</button>
+        <button class="add-btn-inline" onclick="event.stopPropagation();openModal('editCompany','${c.id}')" title="企業を編集">✎</button>
       </div>
       ${isExpC?`<div class="project-tree">${c.projects.map(p=>{
         const isExpP=ui.expandedProjects[p.id]!==false;
@@ -1053,7 +1063,6 @@ function renderHome(c){
           '</div>'+
         '</div>'+
         '<div id="homeWeekGrid" style="margin-top:10px"></div>'+
-        '<div id="homeWeekDetail" style="margin-top:8px"></div>'+
         (!gcalOk?
           '<div style="margin-top:8px;padding:6px 10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:space-between">'+
             '<span>📅 Googleカレンダーと連携するとイベントも表示されます</span>'+
@@ -1188,7 +1197,7 @@ function renderHome(c){
 
   h+='</div>';// close home-layout
   c.innerHTML=h;
-  setTimeout(function(){buildHomeWeekGrid(weekDays,todayStr);setHomeWeekDay(todayStr);},50);
+  setTimeout(function(){buildHomeWeekGrid(weekDays,todayStr);},50);
 }
 
 
@@ -1242,7 +1251,7 @@ function buildHomeWeekGrid(weekDays, todayStr){
   // and startDate..dueDate tasks as multi-day bars
   const HOUR_H=48; // px per hour
   const START_HOUR=8;
-  const END_HOUR=21;
+  const END_HOUR=24;
   const HOURS=END_HOUR-START_HOUR;
   const now=new Date();
   const nowH=now.getHours()+(now.getMinutes()/60);
@@ -1254,28 +1263,68 @@ function buildHomeWeekGrid(weekDays, todayStr){
   all.forEach(function(t){
     if(t.status==='done') return;
     // All-day style: show on actionDate
+    var tc=t.calColor||t.companyColor||'var(--accent)';
     if(t.actionDate&&allDayEvents[t.actionDate])
-      allDayEvents[t.actionDate].push({id:t.id,title:t.title,color:t.companyColor||'var(--accent)',isAction:true});
+      allDayEvents[t.actionDate].push({id:t.id,title:t.title,color:tc,isAction:true});
     else if(t.dueDate&&allDayEvents[t.dueDate]&&t.actionDate!==t.dueDate)
-      allDayEvents[t.dueDate].push({id:t.id,title:t.title,color:t.companyColor||'var(--accent)',isDue:true});
+      allDayEvents[t.dueDate].push({id:t.id,title:t.title,color:tc,isDue:true});
   });
 
-  // Timed events from state.gcalEvents (stub) - for now, generate from tasks with startDate/dueDate
-  // We distribute tasks as timed events using a simple hash for visual variety
+  // Timed events: tasks distributed as calendar entries + real Google Calendar events
   const timedEvents={};
   weekDates.forEach(d=>{timedEvents[d]=[];});
   all.forEach(function(t,ti){
     if(t.status==='done') return;
-    // Use actionDate for timed slot (simulated hour from title hash)
     const targetDate=t.actionDate&&weekDates.includes(t.actionDate)?t.actionDate:
                      t.dueDate&&weekDates.includes(t.dueDate)?t.dueDate:null;
     if(!targetDate) return;
-    // Don't double-show as timed if already in allDay
-    // Give a pseudo time based on title length for demo variety
-    const h=START_HOUR + (ti % (HOURS-1));
-    const dur=1;
-    timedEvents[targetDate].push({id:t.id,title:t.title,color:t.companyColor||'var(--accent)',startH:h,endH:h+dur});
+    var tc=t.calColor||t.companyColor||'var(--accent)';
+    if(t.actionStartTime){
+      var parts=t.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
+      var eH=sH+1;
+      if(t.actionEndTime){var ep=t.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
+      timedEvents[targetDate].push({id:t.id,title:t.title,color:tc,startH:sH,endH:eH});
+    }else{
+      var h=START_HOUR + (ti % (HOURS-1));
+      timedEvents[targetDate].push({id:t.id,title:t.title,color:tc,startH:h,endH:h+1});
+    }
   });
+
+  // Add Todos with action times as timed events
+  all.forEach(function(t){
+    if(t.status==='done') return;
+    (t.todos||[]).forEach(function(td){
+      if(!td.actionDate||td.done||!td.actionStartTime||!weekDates.includes(td.actionDate)) return;
+      var parts=td.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
+      var eH=sH+1;
+      if(td.actionEndTime){var ep=td.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
+      timedEvents[td.actionDate].push({id:t.id,title:'★ '+td.text,color:t.calColor||t.companyColor||'var(--accent)',startH:sH,endH:eH});
+    });
+  });
+
+  // Integrate real Google Calendar events
+  if(state.gcalEvents&&state.gcalEvents.length){
+    state.gcalEvents.forEach(function(e){
+      if(!e.start||!e.end)return;
+      var startStr=e.start.slice(0,10);
+      var endStr=e.end.slice(0,10);
+      if(e.allDay){
+        weekDates.forEach(function(d){
+          if(d>=startStr&&d<endStr&&allDayEvents[d]){
+            allDayEvents[d].push({id:'gcal_'+e.id,title:'📅 '+e.summary,color:'#4285f4',isGcal:true,htmlLink:e.htmlLink});
+          }
+        });
+      }else{
+        if(timedEvents[startStr]){
+          var st=new Date(e.start),en=new Date(e.end);
+          var sH=st.getHours()+st.getMinutes()/60;
+          var eH=en.getHours()+en.getMinutes()/60;
+          if(eH<=sH)eH=sH+0.5;
+          timedEvents[startStr].push({id:'gcal_'+e.id,title:e.summary,color:'#4285f4',startH:sH,endH:eH,isGcal:true,htmlLink:e.htmlLink});
+        }
+      }
+    });
+  }
 
   // Build header
   const COLS=7;
@@ -1289,7 +1338,8 @@ function buildHomeWeekGrid(weekDays, todayStr){
       '<div class="gcal-day-num'+(d.isToday?' today':'')+'">'+d.num+'</div>'+
       // All-day event chips (max 2)
       (allDayEvents[d.date]||[]).slice(0,2).map(function(e){
-        return '<div style="background:'+e.color+';border-radius:3px;padding:1px 5px;margin:2px 2px 0;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-weight:600" onclick="selectTask(\''+e.id+'\')" title="'+e.title.replace(/"/g,'&quot;')+'">'+
+        var onclick=e.isGcal&&e.htmlLink?'window.open(\''+e.htmlLink.replace(/'/g,"\\'")+'\',\'_blank\')':'selectTask(\''+e.id+'\')';
+        return '<div style="background:'+e.color+';border-radius:3px;padding:1px 5px;margin:2px 2px 0;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-weight:600" onclick="'+onclick+'" title="'+e.title.replace(/"/g,'&quot;')+'">'+
           (e.isAction?'★ ':'')+e.title+'</div>';
       }).join('')+
       ((allDayEvents[d.date]||[]).length>2?'<div style="font-size:9px;color:var(--text3);margin-top:2px">+'+((allDayEvents[d.date]||[]).length-2)+' 件</div>':'')+
@@ -1327,10 +1377,11 @@ function buildHomeWeekGrid(weekDays, todayStr){
     // Simple column layout: no overlap handling, just position them
     events.forEach(function(e){
       const top=(Math.max(e.startH,START_HOUR)-START_HOUR)*HOUR_H;
-      const height=(Math.min(e.endH,END_HOUR)-Math.max(e.startH,START_HOUR))*HOUR_H;
+      const height=Math.max((Math.min(e.endH,END_HOUR)-Math.max(e.startH,START_HOUR))*HOUR_H,20);
       const title=e.title.replace(/"/g,'&quot;').replace(/</g,'&lt;');
-      bodyHTML+='<div class="gcal-event" style="top:'+(top+2)+'px;height:'+(height-4)+'px;left:4px;right:4px;background:'+e.color+'" onclick="selectTask(\''+e.id+'\')" title="'+title+'">'+
-        e.title+'</div>';
+      var onclick=e.isGcal&&e.htmlLink?'window.open(\''+e.htmlLink.replace(/'/g,"\\'")+'\',\'_blank\')':'selectTask(\''+e.id+'\')';
+      bodyHTML+='<div class="gcal-event" style="top:'+(top+2)+'px;height:'+(height-4)+'px;left:4px;right:4px;background:'+e.color+'" onclick="'+onclick+'" title="'+title+'">'+
+        (e.isGcal?'📅 ':'')+e.title+'</div>';
     });
     bodyHTML+='</div>';
   });
@@ -1418,8 +1469,8 @@ function cycleStatus(id){
 
 function selectTask(id){
   ui.selectedTaskId=id;
-  renderContent();
-  renderDetail(id);
+  try{renderContent();}catch(e){console.error('renderContent error:',e);}
+  try{renderDetail(id);}catch(e){console.error('renderDetail error:',e);}
 }
 
 // ============================================================
@@ -1567,6 +1618,15 @@ function renderDetail(id){
   </div>
 
   <div class="detail-section">
+    <div class="detail-label">カレンダー表示色</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <div style="width:24px;height:24px;border-radius:50%;background:${c.color};cursor:pointer;border:2px solid ${!t.calColor?'#333':'transparent'};opacity:${!t.calColor?1:0.5}" onclick="saveDetailField('${id}','calColor','');this.parentElement.querySelectorAll('div').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.5'});this.style.borderColor='#333';this.style.opacity='1'" title="企業カラー（デフォルト）"></div>
+      ${['#3b7dd8','#e85d3a','#2a9e6e','#d4820e','#7c4ddb','#0e9ec4','#e85d9a','#dc3545','#f5a623','#5d9e2a'].map(col=>`<div style="width:24px;height:24px;border-radius:50%;background:${col};cursor:pointer;border:2px solid ${t.calColor===col?'#333':'transparent'};opacity:${t.calColor===col?1:0.5}" onclick="saveDetailField('${id}','calColor','${col}');this.parentElement.querySelectorAll('div').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.5'});this.style.borderColor='#333';this.style.opacity='1'"></div>`).join('')}
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:4px">ホーム画面のカレンダーに表示される色</div>
+  </div>
+
+  <div class="detail-section">
     <div class="detail-label">期間 & アクション日</div>
     <div class="detail-row">
       <div>
@@ -1580,7 +1640,13 @@ function renderDetail(id){
     </div>
     <div style="margin-top:8px">
       <div style="font-size:11px;color:var(--accent);margin-bottom:4px;font-weight:600">★ アクション日（今日のアクションに表示）</div>
-      <input class="detail-input" type="date" value="${t.actionDate||''}" onchange="saveDetailField('${id}','actionDate',this.value)" style="border-color:var(--accent)">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input class="detail-input" type="date" value="${t.actionDate||''}" onchange="saveDetailField('${id}','actionDate',this.value)" style="border-color:var(--accent);flex:1;min-width:120px">
+        <input class="detail-input" type="time" value="${t.actionStartTime||''}" onchange="saveDetailField('${id}','actionStartTime',this.value)" style="border-color:var(--accent);width:90px" placeholder="開始" title="開始時間">
+        <span style="font-size:11px;color:var(--text3)">〜</span>
+        <input class="detail-input" type="time" value="${t.actionEndTime||''}" onchange="saveDetailField('${id}','actionEndTime',this.value)" style="border-color:var(--accent);width:90px" placeholder="終了" title="終了時間">
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">時間を設定するとGoogleカレンダーに時間指定イベントとして登録されます</div>
     </div>
   </div>
 
@@ -1635,11 +1701,18 @@ function renderDetailTodos(t){
   <div class="detail-todo-item" style="flex-wrap:wrap;gap:4px">
     <div class="todo-check ${td.done?'done':''}" onclick="toggleTodo('${t.id}','${td.id}')">${td.done?'✓':''}</div>
     <span class="todo-text ${td.done?'done':''}" style="flex:1;min-width:120px">${esc(td.text)}</span>
-    <div style="display:flex;align-items:center;gap:4px;margin-left:auto">
+    <div style="display:flex;align-items:center;gap:3px;margin-left:auto">
       <span style="font-size:10px;color:var(--accent);white-space:nowrap">★</span>
-      <input type="date" value="${td.actionDate||''}" 
-        style="font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer"
+      <input type="date" value="${td.actionDate||''}"
+        style="font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:110px"
         title="アクション日" onchange="setTodoActionDate('${t.id}','${td.id}',this.value)">
+      <input type="time" value="${td.actionStartTime||''}"
+        style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:70px"
+        title="開始時間" onchange="setTodoActionTime('${t.id}','${td.id}','actionStartTime',this.value)">
+      <span style="font-size:9px;color:var(--text3)">〜</span>
+      <input type="time" value="${td.actionEndTime||''}"
+        style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:70px"
+        title="終了時間" onchange="setTodoActionTime('${t.id}','${td.id}','actionEndTime',this.value)">
     </div>
     <span class="todo-del" onclick="deleteTodo('${t.id}','${td.id}')">✕</span>
   </div>`).join('');
@@ -1651,27 +1724,80 @@ function setTodoActionDate(taskId,todoId,date){
   const oldDate=td.actionDate||'';
   td.actionDate=date;
   save();updateBadges();
-  if(state.gcalConnected&&date){
-    const eventTitle='★ Todo: '+td.text+' ('+r.task.title+')';
-    console.log('[GCal Todo Event]',{title:eventTitle,date});
-    if(!td.gcalEventId)td.gcalEventId=uid();
-    save();
-    showToast('GCal: Todoアクション日を登録しました');
-  } else if(state.gcalConnected&&!date&&oldDate&&td.gcalEventId){
-    console.log('[GCal Todo Delete]',{gcalEventId:td.gcalEventId});
-    td.gcalEventId=null;save();
-    showToast('GCal: Todoイベントを削除しました');
+  if(state.gcalConnected&&_gcalAccessToken&&date){
+    syncTodoToGcal(r,td);
+  } else if(state.gcalConnected&&_gcalAccessToken&&!date&&oldDate&&td.gcalEventId){
+    deleteTodoFromGcal(td);
   }
   if(ui.view==='home') renderContent();
   else if(ui.selectedTaskId===taskId) renderDetail(taskId);
+}
+function setTodoActionTime(taskId,todoId,field,value){
+  const r=getTask(taskId);if(!r)return;
+  const td=r.task.todos.find(x=>x.id===todoId);if(!td)return;
+  td[field]=value;
+  save();
+  if(state.gcalConnected&&_gcalAccessToken&&td.actionDate){
+    syncTodoToGcal(r,td);
+  }
+  if(ui.selectedTaskId===taskId) renderDetail(taskId);
+}
+async function syncTodoToGcal(r,td){
+  var calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  var event={
+    summary:'★ '+td.text+' ('+r.task.title+')',
+    description:r.company.name+' / '+r.project.name,
+  };
+  if(td.actionStartTime&&td.actionEndTime){
+    event.start={dateTime:td.actionDate+'T'+td.actionStartTime+':00',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone};
+    event.end={dateTime:td.actionDate+'T'+td.actionEndTime+':00',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone};
+  }else if(td.actionStartTime){
+    var endT=td.actionStartTime.split(':');var eH=parseInt(endT[0])+1;
+    event.start={dateTime:td.actionDate+'T'+td.actionStartTime+':00',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone};
+    event.end={dateTime:td.actionDate+'T'+String(eH).padStart(2,'0')+':'+endT[1]+':00',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone};
+  }else{
+    event.start={date:td.actionDate};
+    event.end={date:addDays(td.actionDate,1)};
+  }
+  try{
+    if(td.gcalEventId){
+      await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+td.gcalEventId,{method:'PATCH',body:JSON.stringify(event)});
+      showToast('📅 Todoのカレンダー予定を更新しました');
+    }else{
+      var created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(event)});
+      td.gcalEventId=created.id;save();
+      showToast('📅 Todoをカレンダーに登録しました');
+    }
+    await fetchGcalEvents();
+    if(ui.view==='home')renderContent();
+  }catch(e){
+    console.error('GCal todo sync failed:',e);
+    showToast('カレンダー登録に失敗しました','error');
+  }
+}
+async function deleteTodoFromGcal(td){
+  if(!td.gcalEventId)return;
+  var calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  try{
+    await fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+td.gcalEventId,{
+      method:'DELETE',headers:{'Authorization':'Bearer '+_gcalAccessToken}
+    });
+    td.gcalEventId=null;save();
+    showToast('📅 Todoのカレンダー予定を削除しました');
+    await fetchGcalEvents();
+    if(ui.view==='home')renderContent();
+  }catch(e){
+    console.error('GCal todo delete failed:',e);
+  }
 }
 
 function saveDetailField(id,field,value){
   updateTask(id,{[field]:value.trim()});
   renderAll();
-  // Trigger GCal update if dates changed
   const r=getTask(id);
-  if(r&&r.task.gcal&&state.gcalConnected&&(field==='startDate'||field==='dueDate')){
+  // Trigger GCal update if dates/times changed
+  if(r&&r.task.gcal&&state.gcalConnected&&_gcalAccessToken&&
+    (field==='startDate'||field==='dueDate'||field==='actionDate'||field==='actionStartTime'||field==='actionEndTime')){
     updateGcalEvent(r.task,r.company,r.project);
   }
 }
@@ -2042,11 +2168,12 @@ function setKanbanGroup(key){
 // TIMELINE / GANTT — CSS-grid approach (no per-row DOM columns)
 // ============================================================
 function renderTimeline(container){
+ try{
   // Reset container styling
   container.className='content';
-  container.style.cssText='padding:0;overflow:hidden;display:flex;flex-direction:column;';
+  container.style.cssText='padding:0;overflow:hidden;overflow-x:hidden;overflow-y:hidden;display:flex;flex-direction:column;min-height:0;';
 
-  let tasks=getAllTasks().filter(t=>t.startDate&&t.dueDate);
+  let tasks=getAllTasks().filter(t=>t.startDate&&t.dueDate&&t.startDate.length===10&&t.dueDate.length===10);
   if(ui.view==='project') tasks=tasks.filter(t=>t.projectId===ui.projectId);
   else if(ui.view==='company') tasks=tasks.filter(t=>t.companyId===ui.companyId);
 
@@ -2211,6 +2338,11 @@ function renderTimeline(container){
       if(sc) sc.scrollLeft=Math.max(0,(todayIdx-3)*DAY_W);
     });
   }
+ }catch(e){
+  console.error('Timeline render error:',e);
+  container.style.cssText='padding:20px;overflow-y:auto;';
+  container.innerHTML='<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">タイムラインの表示中にエラーが発生しました</div><div style="font-size:12px;color:var(--text3);margin-top:8px">'+esc(e.message)+'</div></div>';
+ }
 }
 
 function setGanttZoom(z){ui.ganttZoom=z;save();renderContent()}
@@ -2233,6 +2365,7 @@ function overlayClick(e){if(e.target===document.getElementById('overlay'))closeM
 
 function buildModal(type,...args){
   if(type==='addCompany')return buildAddCompany();
+  if(type==='editCompany')return buildEditCompany(args[0]);
   if(type==='addProject')return buildAddProject(args[0]);
   if(type==='addTask')return buildAddTask(args[0],args[1],args[2]);
   if(type==='editTask')return buildEditTask(args[0]);
@@ -2260,6 +2393,47 @@ function doAddCompany(){
   state.companies.push(c);
   save();closeModal();renderAll();
   showToast(`「${name}」を追加しました`);
+}
+
+function buildEditCompany(cid){
+  const c=getCompany(cid);if(!c)return'';
+  const taskCount=c.projects.flatMap(p=>p.tasks).length;
+  const projCount=c.projects.length;
+  return`<div class="modal-title">企業を編集<span class="modal-close" onclick="closeModal()">✕</span></div>
+  <div class="form-group"><label class="form-label">企業名</label><input class="form-input" id="m-ecname" value="${esc(c.name)}"></div>
+  <div class="form-group"><label class="form-label">カラー</label>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+  ${['#3b7dd8','#e85d3a','#2a9e6e','#d4820e','#7c4ddb','#0e9ec4','#e85d9a','#5d9e2a'].map(col=>`<div style="width:28px;height:28px;border-radius:50%;background:${col};cursor:pointer;border:2px solid ${col===c.color?'#333':'transparent'};transition:border-color .12s" onclick="document.getElementById('m-eccolor').value='${col}';this.parentElement.querySelectorAll('div').forEach(d=>d.style.borderColor='transparent');this.style.borderColor='#333'"></div>`).join('')}
+  <input type="hidden" id="m-eccolor" value="${c.color}">
+  </div></div>
+  <div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2)">
+    📁 プロジェクト: ${projCount}件 / 📋 タスク: ${taskCount}件
+  </div>
+  <div class="modal-actions" style="justify-content:space-between">
+    <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="doDeleteCompany('${c.id}')">🗑 企業を削除</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="doEditCompany('${c.id}')">保存</button>
+    </div>
+  </div>`;
+}
+function doEditCompany(cid){
+  const c=getCompany(cid);if(!c)return;
+  const name=document.getElementById('m-ecname').value.trim();if(!name)return;
+  c.name=name;
+  c.color=document.getElementById('m-eccolor').value;
+  save();closeModal();renderAll();
+  showToast(`「${name}」を更新しました`);
+}
+function doDeleteCompany(cid){
+  const c=getCompany(cid);if(!c)return;
+  const taskCount=c.projects.flatMap(p=>p.tasks).length;
+  if(!confirm(`「${c.name}」を削除しますか？\n（プロジェクト${c.projects.length}件・タスク${taskCount}件がすべて削除されます）`))return;
+  state.companies=state.companies.filter(x=>x.id!==cid);
+  if(ui.companyId===cid){ui.companyId=null;ui.projectId=null;}
+  save();closeModal();closeDetail();
+  navTo('all',null,null,null,document.getElementById('nav-all'));
+  showToast(`「${c.name}」を削除しました`);
 }
 
 function buildAddProject(cid){
@@ -2374,10 +2548,13 @@ function buildIntegrations(){
       </div>
       <div class="int-status ${state.gcalConnected?'ok':'no'}">${state.gcalConnected?'✓ 連携中':'未連携'}</div>
     </div>
-    <div class="int-desc">タスクに開始日・締め切りを設定すると、Googleカレンダーに期間イベントとして自動登録されます。Claude.aiのGoogleカレンダー連携を使用します。</div>
+    <div class="int-desc">タスクに開始日・締め切りを設定すると、Googleカレンダーに期間イベントとして自動登録されます。Google OAuth2認証を使用します。</div>
+    ${!GCAL_CLIENT_ID?'<div style="margin-top:8px;padding:8px 10px;background:#fffbef;border:1px solid #f5e4b0;border-radius:var(--radius-sm);font-size:11px;color:var(--accent4);line-height:1.5">⚠️ Client IDが未設定です。<a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--accent)">Google Cloud Console</a>でOAuth 2.0クライアントIDを取得し、コード内の<code>GCAL_CLIENT_ID</code>に設定してください。</div>':''}
+    ${state.gcalConnected&&_gcalAccessToken?'<div style="margin-top:6px;font-size:11px;color:var(--accent3)">✓ 認証済み（イベント '+((state.gcalEvents||[]).length)+'件取得済み）</div>':''}
+    ${state.gcalConnected&&!_gcalAccessToken?'<div style="margin-top:6px;font-size:11px;color:var(--accent4)">⚠ セッション切れ — 再接続が必要です</div>':''}
     <div class="int-actions">
       ${state.gcalConnected
-        ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGcal()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGcal()">🔄 更新</button>`
+        ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGcal()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGcal()">🔄 イベント更新</button>`
         :`<button class="btn btn-primary btn-sm" onclick="doConnectGcal()">📅 カレンダーと連携する</button>`}
     </div>
   </div>
@@ -2409,25 +2586,63 @@ function buildIntegrations(){
 }
 
 async function doConnectGcal(){
+  if(!GCAL_CLIENT_ID){
+    showToast('Google Calendar Client IDが未設定です','error');
+    closeModal();
+    return;
+  }
   const btn=document.querySelector('#modalContent .btn-primary');
   if(btn){btn.textContent='接続中...';btn.disabled=true;}
   try{
-    // Try real GCal through Claude.ai integration
-    const events=await window._gcalFetch();
-    state.gcalConnected=true;
-    save();updateIntDots();closeModal();
-    showToast(`Googleカレンダーと連携しました`,'success');
-    renderAll();
+    if(typeof google==='undefined'||!google.accounts){
+      showToast('Google認証ライブラリを読み込み中です。少し待ってから再試行してください。','error');
+      if(btn){btn.textContent='連携を開始';btn.disabled=false;}
+      return;
+    }
+    if(!_gcalTokenClient){
+      _gcalTokenClient=google.accounts.oauth2.initTokenClient({
+        client_id:GCAL_CLIENT_ID,
+        scope:GCAL_SCOPES,
+        callback:async(tokenResponse)=>{
+          if(tokenResponse.error){
+            showToast('認証に失敗しました: '+tokenResponse.error,'error');
+            return;
+          }
+          _gcalAccessToken=tokenResponse.access_token;
+          state.gcalConnected=true;
+          save();updateIntDots();closeModal();
+          showToast('Googleカレンダーと連携しました','success');
+          await fetchGcalEvents();
+          renderAll();
+        },
+      });
+    }
+    _gcalTokenClient.requestAccessToken();
   }catch(e){
-    // Demo mode
-    state.gcalConnected=true;
-    save();updateIntDots();closeModal();
-    showToast('デモモードで連携（サンプル動作）','info');
-    renderAll();
+    console.error('GCal connect error:',e);
+    showToast('連携に失敗しました: '+e.message,'error');
+    if(btn){btn.textContent='連携を開始';btn.disabled=false;}
   }
 }
-function doDisconnectGcal(){state.gcalConnected=false;save();updateIntDots();closeModal();showToast('Googleカレンダーの連携を解除しました');renderAll()}
-function doRefreshGcal(){showToast('カレンダーを更新しました');closeModal()}
+function doDisconnectGcal(){
+  if(_gcalAccessToken&&typeof google!=='undefined'&&google.accounts){
+    try{google.accounts.oauth2.revoke(_gcalAccessToken);}catch(e){}
+  }
+  _gcalAccessToken=null;_gcalTokenClient=null;
+  state.gcalConnected=false;state.gcalEvents=[];
+  save();updateIntDots();closeModal();
+  showToast('Googleカレンダーの連携を解除しました');renderAll();
+}
+async function doRefreshGcal(){
+  if(_gcalAccessToken){
+    await fetchGcalEvents();
+    showToast('カレンダーを更新しました');
+    closeModal();renderAll();
+  }else{
+    showToast('再認証が必要です。連携を解除して再接続してください。','error');
+    closeModal();
+  }
+}
 
 function buildGchatSetup(){
   return`<div class="modal-title">Google Chat Webhook設定<span class="modal-close" onclick="closeModal()">✕</span></div>
@@ -2465,18 +2680,119 @@ function doTestGchat(){
 }
 
 // ============================================================
-// INTEGRATIONS LOGIC
+// INTEGRATIONS LOGIC — Google Calendar API
 // ============================================================
-function createGcalEvent(task,company,project){
-  if(!state.gcalConnected)return;
-  const msg=`📅 Googleカレンダーに登録: "${task.title}" (${task.startDate||task.dueDate} 〜 ${task.dueDate||task.startDate})`;
-  console.log('[GCal Create]',{title:`[${company.name}] ${task.title}`,start:task.startDate,end:task.dueDate,description:`${project.name}: ${task.note||''}`});
-  showToast(msg.slice(0,60));
+async function gcalApiFetch(url,options={}){
+  if(!_gcalAccessToken)throw new Error('Not authenticated');
+  const resp=await fetch(url,{
+    ...options,
+    headers:{
+      'Authorization':'Bearer '+_gcalAccessToken,
+      'Content-Type':'application/json',
+      ...(options.headers||{}),
+    },
+  });
+  if(resp.status===401){
+    _gcalAccessToken=null;
+    state.gcalConnected=false;
+    save();updateIntDots();
+    showToast('認証が期限切れです。再接続してください。','error');
+    throw new Error('Token expired');
+  }
+  if(!resp.ok)throw new Error('API error: '+resp.status);
+  return resp.json();
 }
-function updateGcalEvent(task,company,project){
+
+async function fetchGcalEvents(){
+  if(!_gcalAccessToken)return;
+  const now=new Date();
+  const timeMin=new Date(now);timeMin.setDate(timeMin.getDate()-7);
+  const timeMax=new Date(now);timeMax.setDate(timeMax.getDate()+90);
+  try{
+    const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+    const baseUrl='https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events?'+
+      'timeMin='+timeMin.toISOString()+'&timeMax='+timeMax.toISOString()+
+      '&singleEvents=true&orderBy=startTime&maxResults=2500';
+    var allItems=[];
+    var pageToken=null;
+    do{
+      var url=baseUrl+(pageToken?'&pageToken='+pageToken:'');
+      var data=await gcalApiFetch(url);
+      allItems=allItems.concat(data.items||[]);
+      pageToken=data.nextPageToken||null;
+      console.log('[GCal] Page fetched:',data.items?.length||0,'events, total so far:',allItems.length,pageToken?'(more pages)':'(done)');
+    }while(pageToken);
+    console.log('[GCal] Total:',allItems.length,'events, range:',timeMin.toISOString().slice(0,10),'~',timeMax.toISOString().slice(0,10));
+    state.gcalEvents=allItems.map(function(e){
+      return{
+        id:e.id,
+        summary:e.summary||'(無題)',
+        start:e.start.dateTime||e.start.date,
+        end:e.end.dateTime||e.end.date,
+        allDay:!!e.start.date,
+        color:e.colorId||null,
+        htmlLink:e.htmlLink,
+      };
+    });
+    save();
+  }catch(e){
+    console.error('Failed to fetch GCal events:',e);
+  }
+}
+
+function buildGcalEventBody(task,company,project){
+  var tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  var ev={summary:'['+company.name+'] '+task.title,description:project.name+': '+(task.note||'')};
+  if(task.actionDate&&task.actionStartTime&&task.actionEndTime){
+    ev.start={dateTime:task.actionDate+'T'+task.actionStartTime+':00',timeZone:tz};
+    ev.end={dateTime:task.actionDate+'T'+task.actionEndTime+':00',timeZone:tz};
+  }else if(task.actionDate&&task.actionStartTime){
+    var endT=task.actionStartTime.split(':');var eH=parseInt(endT[0])+1;
+    ev.start={dateTime:task.actionDate+'T'+task.actionStartTime+':00',timeZone:tz};
+    ev.end={dateTime:task.actionDate+'T'+String(eH).padStart(2,'0')+':'+endT[1]+':00',timeZone:tz};
+  }else{
+    ev.start=task.startDate?{date:task.startDate}:{date:task.dueDate||task.actionDate};
+    ev.end=task.dueDate?{date:addDays(task.dueDate,1)}:{date:addDays(task.startDate||task.actionDate,1)};
+  }
+  return ev;
+}
+async function createGcalEvent(task,company,project){
   if(!state.gcalConnected)return;
-  console.log('[GCal Update]',{title:task.title,start:task.startDate,end:task.dueDate});
-  showToast('Googleカレンダーのイベントを更新しました');
+  if(!_gcalAccessToken){
+    showToast('📅 カレンダー登録: 再認証が必要です','error');
+    return;
+  }
+  const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  const event=buildGcalEventBody(task,company,project);
+  try{
+    const created=await gcalApiFetch(
+      'https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',
+      {method:'POST',body:JSON.stringify(event)}
+    );
+    updateTask(task.id,{gcalEventId:created.id});
+    showToast('📅 Googleカレンダーに登録しました');
+    await fetchGcalEvents();
+    if(ui.view==='home')renderContent();
+  }catch(e){
+    console.error('GCal create failed:',e);
+    showToast('カレンダー登録に失敗しました','error');
+  }
+}
+async function updateGcalEvent(task,company,project){
+  if(!state.gcalConnected||!_gcalAccessToken||!task.gcalEventId)return;
+  const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  const event=buildGcalEventBody(task,company,project);
+  try{
+    await gcalApiFetch(
+      'https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventId,
+      {method:'PATCH',body:JSON.stringify(event)}
+    );
+    showToast('Googleカレンダーのイベントを更新しました');
+    await fetchGcalEvents();
+    if(ui.view==='home')renderContent();
+  }catch(e){
+    console.error('GCal update failed:',e);
+  }
 }
 
 function sendGchatNotification(text){
@@ -2490,9 +2806,6 @@ function sendGchatNotification(text){
     fetch(state.gchatWebhook,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
   }
 }
-
-// Claude.ai GCal bridge (can be overridden)
-window._gcalFetch=async()=>{throw new Error('no gcal')};
 
 function updateIntDots(){
   document.getElementById('gcal-dot').className='int-dot '+(state.gcalConnected?'connected':'disconnected');
@@ -2560,6 +2873,12 @@ updateIntDots();
 navTo('home',null,null,null,document.getElementById('nav-home'));
 setInterval(checkReminders,60000);
 checkReminders();
+// Notify if GCal was connected but token expired (page reload)
+if(state.gcalConnected&&!_gcalAccessToken){
+  setTimeout(function(){
+    showToast('Googleカレンダーの再認証が必要です。連携設定から再接続してください。','info');
+  },2000);
+}
 </script>
 </body>
 </html>
