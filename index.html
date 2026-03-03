@@ -449,19 +449,6 @@ textarea.form-input{resize:vertical;min-height:72px}
     <div class="app-logo"><div class="logo-mark">S</div>Stride</div>
     <button class="btn-icon" onclick="openModal('addCompany')" title="企業を追加">＋</button>
   </div>
-  <!-- Firebase ログイン -->
-  <div style="padding:8px 12px;border-bottom:1px solid var(--border)">
-    <button id="firebase-login-btn" onclick="firebaseSignIn()"
-      style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface2);cursor:pointer;font-size:12px;font-weight:600;color:var(--text2)">
-      <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-      Googleでログイン
-    </button>
-    <div id="firebase-user-info" style="display:none;align-items:center;flex-wrap:wrap;gap:4px"></div>
-    <button id="firebase-save-btn" onclick="firebaseSave()"
-      style="display:none;align-items:center;gap:6px;width:100%;margin-top:6px;padding:6px 12px;border-radius:var(--radius-sm);border:none;background:var(--accent);cursor:pointer;font-size:11px;font-weight:600;color:#fff">
-      ☁️ クラウドに保存
-    </button>
-  </div>
   <div class="sidebar-section">
     <div class="sidebar-section-label">ダッシュボード</div>
     <div class="nav-row" id="nav-home" onclick="navTo('home',null,null,null,this)">
@@ -1594,27 +1581,6 @@ function renderDetail(id){
     <div style="margin-top:8px">
       <div style="font-size:11px;color:var(--accent);margin-bottom:4px;font-weight:600">★ アクション日（今日のアクションに表示）</div>
       <input class="detail-input" type="date" value="${t.actionDate||''}" onchange="saveDetailField('${id}','actionDate',this.value)" style="border-color:var(--accent)">
-      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
-        <div style="flex:1">
-          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">開始時刻</div>
-          <input class="detail-input" type="time" value="${t.actionStart||''}"
-            onchange="saveDetailField('${id}','actionStart',this.value)"
-            style="border-color:var(--accent)">
-        </div>
-        <div style="padding-top:18px;color:var(--text3)">〜</div>
-        <div style="flex:1">
-          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">終了時刻</div>
-          <input class="detail-input" type="time" value="${t.actionEnd||''}"
-            onchange="saveDetailField('${id}','actionEnd',this.value)"
-            style="border-color:var(--accent)">
-        </div>
-      </div>
-      <div style="margin-top:8px">
-        <button onclick="syncTaskToGcal('${id}')"
-          style="display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:var(--radius-sm);border:none;background:#4285F4;color:#fff;font-size:12px;font-weight:600;cursor:pointer">
-          📅 Googleカレンダーに登録
-        </button>
-      </div>
     </div>
   </div>
 
@@ -1674,13 +1640,6 @@ function renderDetailTodos(t){
       <input type="date" value="${td.actionDate||''}" 
         style="font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer"
         title="アクション日" onchange="setTodoActionDate('${t.id}','${td.id}',this.value)">
-      <input type="time" value="${td.actionStart||''}"
-        style="font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:76px"
-        title="開始時刻" onchange="setTodoTime('${t.id}','${td.id}','start',this.value)">
-      <span style="font-size:10px;color:var(--text3)">〜</span>
-      <input type="time" value="${td.actionEnd||''}"
-        style="font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:76px"
-        title="終了時刻" onchange="setTodoTime('${t.id}','${td.id}','end',this.value)">
     </div>
     <span class="todo-del" onclick="deleteTodo('${t.id}','${td.id}')">✕</span>
   </div>`).join('');
@@ -1692,91 +1651,19 @@ function setTodoActionDate(taskId,todoId,date){
   const oldDate=td.actionDate||'';
   td.actionDate=date;
   save();updateBadges();
-  syncTodoToGcal(taskId,todoId);
+  if(state.gcalConnected&&date){
+    const eventTitle='★ Todo: '+td.text+' ('+r.task.title+')';
+    console.log('[GCal Todo Event]',{title:eventTitle,date});
+    if(!td.gcalEventId)td.gcalEventId=uid();
+    save();
+    showToast('GCal: Todoアクション日を登録しました');
+  } else if(state.gcalConnected&&!date&&oldDate&&td.gcalEventId){
+    console.log('[GCal Todo Delete]',{gcalEventId:td.gcalEventId});
+    td.gcalEventId=null;save();
+    showToast('GCal: Todoイベントを削除しました');
+  }
   if(ui.view==='home') renderContent();
   else if(ui.selectedTaskId===taskId) renderDetail(taskId);
-}
-
-function setTodoTime(taskId,todoId,field,value){
-  const r=getTask(taskId);if(!r)return;
-  const td=r.task.todos.find(x=>x.id===todoId);if(!td)return;
-  if(field==='start') td.actionStart=value;
-  else td.actionEnd=value;
-  save();
-  syncTodoToGcal(taskId,todoId);
-}
-
-function syncTodoToGcal(taskId,todoId){
-  const r=getTask(taskId);if(!r)return;
-  const td=r.task.todos.find(x=>x.id===todoId);if(!td)return;
-  if(!td.actionDate){
-    if(td.gcalEventId){td.gcalEventId=null;save();}
-    return;
-  }
-  if(!td.gcalEventId) td.gcalEventId=uid();
-  const title='★ '+td.text+' ('+r.task.title+')';
-  const date=td.actionDate;
-  const start=td.actionStart||'09:00';
-  const end=td.actionEnd||'10:00';
-  // Google Calendar API呼び出し
-  if(state.gcalConnected){
-    const startDT=date+'T'+start+':00';
-    const endDT=date+'T'+end+':00';
-    console.log('[GCal] sync event:',{title,startDT,endDT});
-    createOrUpdateGcalEvent({
-      id: td.gcalEventId,
-      title,
-      startDT,
-      endDT,
-      description: 'Strideから登録: '+r.task.title
-    });
-    showToast('📅 Googleカレンダーに登録しました');
-  }
-  save();updateBadges();
-}
-
-function createOrUpdateGcalEvent({id,title,startDT,endDT,description}){
-  // Google Calendar API (gapi経由)
-  if(!window.gapi||!gapi.client||!gapi.client.calendar){
-    console.warn('[GCal] gapi not loaded');
-    return;
-  }
-  const event={
-    summary: title,
-    description: description||'',
-    start:{ dateTime: startDT, timeZone:'Asia/Tokyo' },
-    end:  { dateTime: endDT,   timeZone:'Asia/Tokyo' }
-  };
-  gapi.client.calendar.events.insert({
-    calendarId:'primary',
-    resource: event
-  }).then(res=>{
-    console.log('[GCal] event created:',res.result.id);
-  }).catch(e=>{
-    console.error('[GCal] error:',e);
-  });
-}
-
-function syncTaskToGcal(taskId){
-  const r=getTask(taskId);if(!r)return;
-  const t=r.task;
-  if(!t.actionDate){ showToast('アクション日を設定してください'); return; }
-  const start=t.actionStart||'09:00';
-  const end=t.actionEnd||'10:00';
-  const startDT=t.actionDate+'T'+start+':00';
-  const endDT=t.actionDate+'T'+end+':00';
-  const title='📋 '+t.title;
-  console.log('[GCal] Task sync:',{title,startDT,endDT});
-  if(state.gcalConnected){
-    createOrUpdateGcalEvent({
-      id: t.gcalEventId||uid(),
-      title,
-      startDT,
-      endDT,
-      description:'Strideタスク: '+t.title+(t.note?' / '+t.note:'')
-    });
-  }
-  showToast('📅 Googleカレンダーに登録しました');
 }
 
 function saveDetailField(id,field,value){
@@ -2673,104 +2560,6 @@ updateIntDots();
 navTo('home',null,null,null,document.getElementById('nav-home'));
 setInterval(checkReminders,60000);
 checkReminders();
-</script>
-<!-- Firebase SDK (compat = グローバル変数で使える) -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script>
-(function(){
-  const firebaseConfig = {
-    apiKey: "AIzaSyAcgckRPfBlksiG02BRz2hKHxV0jlV9T0U",
-    authDomain: "stride-27747.firebaseapp.com",
-    projectId: "stride-27747",
-    storageBucket: "stride-27747.firebasestorage.app",
-    messagingSenderId: "301893018570",
-    appId: "1:301893018570:web:1b9958e7da5aa8a5ef2533"
-  };
-
-  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db   = firebase.firestore();
-
-  // ── Googleログイン ──
-  window.firebaseSignIn = function() {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithPopup(provider).catch(function(e){
-      console.error('ログインエラー:', e);
-    });
-  };
-
-  // ── ログアウト ──
-  window.firebaseSignOut = function() {
-    auth.signOut();
-  };
-
-  // ── データ保存 ──
-  function saveToCloud(userId) {
-    var data = {
-      companies:  JSON.parse(localStorage.getItem('stride_companies')  || '[]'),
-      projects:   JSON.parse(localStorage.getItem('stride_projects')   || '[]'),
-      tasks:      JSON.parse(localStorage.getItem('stride_tasks')      || '[]'),
-      keepNotes:  JSON.parse(localStorage.getItem('stride_keepNotes')  || '[]'),
-      pinnedDocs: JSON.parse(localStorage.getItem('stride_pinnedDocs') || '[]'),
-      updatedAt:  new Date().toISOString()
-    };
-    db.collection('users').doc(userId).set(data, { merge: true })
-      .then(function(){ console.log('[Firebase] saved'); })
-      .catch(function(e){ console.error('[Firebase] save error:', e); });
-  }
-
-  // ── データ読み込み ──
-  function loadFromCloud(userId) {
-    db.collection('users').doc(userId).get().then(function(snap){
-      if (snap.exists) {
-        var data = snap.data();
-        if (data.companies)  localStorage.setItem('stride_companies',  JSON.stringify(data.companies));
-        if (data.projects)   localStorage.setItem('stride_projects',   JSON.stringify(data.projects));
-        if (data.tasks)      localStorage.setItem('stride_tasks',      JSON.stringify(data.tasks));
-        if (data.keepNotes)  localStorage.setItem('stride_keepNotes',  JSON.stringify(data.keepNotes));
-        if (data.pinnedDocs) localStorage.setItem('stride_pinnedDocs', JSON.stringify(data.pinnedDocs));
-        if (typeof load === 'function') { load(); renderAll(); }
-        showToast('☁️ クラウドからデータを読み込みました');
-      }
-    }).catch(function(e){ console.error('[Firebase] load error:', e); });
-  }
-
-  // ── 認証状態の監視 ──
-  auth.onAuthStateChanged(function(user) {
-    var loginBtn = document.getElementById('firebase-login-btn');
-    var userInfo = document.getElementById('firebase-user-info');
-    var saveBtn  = document.getElementById('firebase-save-btn');
-
-    if (user) {
-      if (loginBtn) loginBtn.style.display = 'none';
-      if (userInfo) {
-        userInfo.style.display = 'flex';
-        userInfo.innerHTML =
-          '<img src="' + (user.photoURL||'') + '" style="width:28px;height:28px;border-radius:50%;margin-right:8px">' +
-          '<span style="font-size:12px;color:var(--text2)">' + (user.displayName||'ユーザー') + '</span>' +
-          '<button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:11px" onclick="firebaseSignOut()">ログアウト</button>';
-      }
-      if (saveBtn) saveBtn.style.display = 'flex';
-
-      loadFromCloud(user.uid);
-
-      if (window._autoSave) clearInterval(window._autoSave);
-      window._autoSave = setInterval(function(){ saveToCloud(user.uid); }, 5 * 60 * 1000);
-
-      window.firebaseSave = function() {
-        saveToCloud(user.uid);
-        showToast('☁️ クラウドに保存しました！');
-      };
-    } else {
-      if (loginBtn) loginBtn.style.display = 'flex';
-      if (userInfo) userInfo.style.display = 'none';
-      if (saveBtn)  saveBtn.style.display  = 'none';
-      if (window._autoSave) clearInterval(window._autoSave);
-    }
-  });
-})();
 </script>
 </body>
 </html>
