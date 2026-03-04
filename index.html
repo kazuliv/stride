@@ -486,6 +486,10 @@ textarea.form-input{resize:vertical;min-height:72px}
       <span style="font-size:12.5px;color:var(--text2)">Googleカレンダー</span>
     </div>
     <div class="integration-badge" onclick="openModal('integrations')">
+      <div class="int-dot" id="gdrive-dot"></div>
+      <span style="font-size:12.5px;color:var(--text2)">Google Drive</span>
+    </div>
+    <div class="integration-badge" onclick="openModal('integrations')">
       <div class="int-dot" id="gchat-dot"></div>
       <span style="font-size:12.5px;color:var(--text2)">Google Chat</span>
     </div>
@@ -545,6 +549,9 @@ let state = {
   },
   gcalEvents: [],
   gcalCalendarId: 'primary',
+  gcalEmailId: '',
+  gdriveConnected: false,
+  gdriveFiles: [],
 };
 
 // Google Calendar API configuration
@@ -552,6 +559,11 @@ const GCAL_CLIENT_ID = '301893018570-ue6s8q8n0rhjv1lgb3732adv4nu93td9.apps.googl
 const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly';
 let _gcalTokenClient = null;
 let _gcalAccessToken = null;
+
+// Google Drive API configuration
+const GDRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
+let _gdriveTokenClient = null;
+let _gdriveAccessToken = null;
 
 let ui = {
   view: 'all',
@@ -1052,6 +1064,11 @@ function renderHome(c){
   '</div>';
 
   // ── Row 1: 今週のスケジュール (full width) ──
+  var gcalEmbedSrc='';
+  if(gcalOk&&state.gcalEmailId){
+    var tz=encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    gcalEmbedSrc='https://calendar.google.com/calendar/embed?src='+encodeURIComponent(state.gcalEmailId)+'&ctz='+tz+'&mode=WEEK&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=0&showCalendars=0&showTz=0';
+  }
   h+='<div class="home-layout">'+
     '<div class="home-row-full">'+
       '<div class="home-card" style="padding-bottom:10px">'+
@@ -1059,10 +1076,15 @@ function renderHome(c){
           '<div class="home-card-title">📅 今週のスケジュール</div>'+
           '<div style="display:flex;gap:6px;align-items:center">'+
             (gcalOk?'<span style="font-size:10px;background:#edfbf4;color:var(--green);padding:2px 7px;border-radius:10px;font-weight:600">GCal連携中</span>':'')+
+            (gcalOk?'<button class="btn btn-ghost btn-sm" onclick="window.open(\'https://calendar.google.com/calendar/r\',\'_blank\')" style="font-size:11px">📝 Googleカレンダーで編集</button>':'')+
             '<button class="btn btn-ghost btn-sm" onclick="navTo(\'timeline\',null,null,null,document.getElementById(\'nav-timeline\'))" style="font-size:11px">ガントチャート↗</button>'+
           '</div>'+
         '</div>'+
-        '<div id="homeWeekGrid" style="margin-top:10px"></div>'+
+        (gcalOk&&gcalEmbedSrc?
+          '<div style="margin-top:10px;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)">'+
+            '<iframe src="'+gcalEmbedSrc+'" style="border:0;width:100%;height:600px" frameborder="0" scrolling="no"></iframe>'+
+          '</div>':
+          '<div id="homeWeekGrid" style="margin-top:10px"></div>')+
         (!gcalOk?
           '<div style="margin-top:8px;padding:6px 10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:space-between">'+
             '<span>📅 Googleカレンダーと連携するとイベントも表示されます</span>'+
@@ -1117,9 +1139,25 @@ function renderHome(c){
 
   // ── Row 3: Googleドライブ・ドキュメント (full width) ──
   let dr='';
-  if(gdriveOk) dr+='<div style="font-size:12px;color:var(--text3);margin-bottom:8px">直近のドキュメント（Google Drive API連携後に表示）</div>';
+  // Drive files from API
+  const driveFiles=state.gdriveFiles||[];
+  if(gdriveOk&&driveFiles.length){
+    dr+='<div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">最近使用したファイル</div>';
+    driveFiles.slice(0,10).forEach(function(f){
+      var icon=driveFileIcon(f.mimeType);
+      var modified=f.modifiedTime?new Date(f.modifiedTime).toLocaleDateString('ja-JP',{month:'short',day:'numeric'}):'';
+      dr+='<a href="'+esc(f.webViewLink||'')+'" target="_blank" class="home-doc-row">'+
+        '<span style="font-size:14px;flex-shrink:0">'+icon+'</span>'+
+        '<span style="flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(f.name)+'</span>'+
+        '<span style="font-size:10px;color:var(--text3);flex-shrink:0;margin-right:4px">'+modified+'</span>'+
+        '<span style="font-size:10px;color:var(--text3)">↗</span></a>';
+    });
+  } else if(gdriveOk){
+    dr+='<div style="font-size:12px;color:var(--text3);margin-bottom:8px">ファイルが見つかりませんでした</div>';
+  }
+  // Task-linked docs
   if(gdocs.length){
-    dr+='<div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">タスク連携ドキュメント</div>';
+    dr+='<div style="font-size:11px;font-weight:600;color:var(--text3);margin-top:'+(gdriveOk&&driveFiles.length?'12px':'0')+';margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">タスク連携ドキュメント</div>';
     gdocs.slice(0,4).forEach(function(d){
       dr+='<a href="'+esc(d.url)+'" target="_blank" class="home-doc-row">'+
         '<span style="width:7px;height:7px;border-radius:50%;background:'+d.color+';flex-shrink:0"></span>'+
@@ -1127,7 +1165,8 @@ function renderHome(c){
         '<span style="font-size:10px;color:var(--text3)">↗</span></a>';
     });
   }
-  dr+='<div style="font-size:11px;font-weight:600;color:var(--text3);margin-top:'+(gdocs.length?'12px':'0')+'margin-bottom:6px">ピン留めドキュメント '+
+  // Pinned docs
+  dr+='<div style="font-size:11px;font-weight:600;color:var(--text3);margin-top:'+(gdocs.length||(gdriveOk&&driveFiles.length)?'12px':'0')+';margin-bottom:6px">ピン留めドキュメント '+
     '<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-left:6px" onclick="openPinDocModal()">＋ 追加</button></div>';
   if(pinnedDocs.length){
     pinnedDocs.forEach(function(d,i){
@@ -1145,7 +1184,10 @@ function renderHome(c){
   h+='<div class="home-row-full">'+
     '<div class="home-card">'+
       '<div class="home-card-header"><div class="home-card-title">📁 Googleドライブ・ドキュメント</div>'+
-        (gdriveOk?'<span style="font-size:10px;background:#edfbf4;color:var(--green);padding:2px 6px;border-radius:10px">連携中</span>':'')+
+        '<div style="display:flex;gap:6px;align-items:center">'+
+          (gdriveOk?'<span style="font-size:10px;background:#edfbf4;color:var(--green);padding:2px 6px;border-radius:10px">連携中</span>':'')+
+          (gdriveOk?'<button class="btn btn-ghost btn-sm" onclick="window.open(\'https://drive.google.com/drive/workspaces\',\'_blank\')" style="font-size:11px">📂 Driveを開く</button>':'')+
+        '</div>'+
       '</div>'+
       dr+
     '</div>'+
@@ -1197,7 +1239,10 @@ function renderHome(c){
 
   h+='</div>';// close home-layout
   c.innerHTML=h;
-  setTimeout(function(){buildHomeWeekGrid(weekDays,todayStr);},50);
+  // Only build custom calendar if GCal embed is not shown
+  if(!gcalOk||!state.gcalEmailId){
+    setTimeout(function(){buildHomeWeekGrid(weekDays,todayStr);},50);
+  }
 }
 
 
@@ -2558,6 +2603,24 @@ function buildIntegrations(){
         :`<button class="btn btn-primary btn-sm" onclick="doConnectGcal()">📅 カレンダーと連携する</button>`}
     </div>
   </div>
+  <div class="int-card ${state.gdriveConnected?'connected':''}">
+    <div class="int-card-header">
+      <div class="int-icon" style="background:#fff8e8">📁</div>
+      <div>
+        <div class="int-title">Google Drive</div>
+        <div style="font-size:12px;color:var(--text3)">ワークスペースのファイルを表示</div>
+      </div>
+      <div class="int-status ${state.gdriveConnected?'ok':'no'}">${state.gdriveConnected?'✓ 連携中':'未連携'}</div>
+    </div>
+    <div class="int-desc">Google Driveと連携すると、最近使用したファイルがホーム画面に表示されます。ファイルをクリックしてDrive上で直接開けます。</div>
+    ${state.gdriveConnected&&_gdriveAccessToken?'<div style="margin-top:6px;font-size:11px;color:var(--accent3)">✓ 認証済み（ファイル '+((state.gdriveFiles||[]).length)+'件取得済み）</div>':''}
+    ${state.gdriveConnected&&!_gdriveAccessToken?'<div style="margin-top:6px;font-size:11px;color:var(--accent4)">⚠ セッション切れ — 再接続が必要です</div>':''}
+    <div class="int-actions">
+      ${state.gdriveConnected
+        ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGdrive()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGdrive()">🔄 ファイル更新</button>`
+        :`<button class="btn btn-primary btn-sm" onclick="doConnectGdrive()">📁 Driveと連携する</button>`}
+    </div>
+  </div>
   <div class="int-card ${state.gchatConnected?'connected':''}">
     <div class="int-card-header">
       <div class="int-icon" style="background:#e8f8f0">💬</div>
@@ -2610,6 +2673,11 @@ async function doConnectGcal(){
           }
           _gcalAccessToken=tokenResponse.access_token;
           state.gcalConnected=true;
+          // Fetch actual calendar ID (email) for embed
+          try{
+            const calInfo=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/primary');
+            if(calInfo&&calInfo.id) state.gcalEmailId=calInfo.id;
+          }catch(e){console.warn('Could not fetch calendar ID:',e);}
           save();updateIntDots();closeModal();
           showToast('Googleカレンダーと連携しました','success');
           await fetchGcalEvents();
@@ -2629,7 +2697,7 @@ function doDisconnectGcal(){
     try{google.accounts.oauth2.revoke(_gcalAccessToken);}catch(e){}
   }
   _gcalAccessToken=null;_gcalTokenClient=null;
-  state.gcalConnected=false;state.gcalEvents=[];
+  state.gcalConnected=false;state.gcalEvents=[];state.gcalEmailId='';
   save();updateIntDots();closeModal();
   showToast('Googleカレンダーの連携を解除しました');renderAll();
 }
@@ -2637,6 +2705,130 @@ async function doRefreshGcal(){
   if(_gcalAccessToken){
     await fetchGcalEvents();
     showToast('カレンダーを更新しました');
+    closeModal();renderAll();
+  }else{
+    showToast('再認証が必要です。連携を解除して再接続してください。','error');
+    closeModal();
+  }
+}
+
+// ============================================================
+// INTEGRATIONS LOGIC — Google Drive API
+// ============================================================
+async function gdriveApiFetch(url,options={}){
+  if(!_gdriveAccessToken)throw new Error('Not authenticated');
+  const resp=await fetch(url,{
+    ...options,
+    headers:{
+      'Authorization':'Bearer '+_gdriveAccessToken,
+      'Content-Type':'application/json',
+      ...(options.headers||{}),
+    },
+  });
+  if(resp.status===401){
+    _gdriveAccessToken=null;
+    state.gdriveConnected=false;
+    save();updateIntDots();
+    showToast('Google Drive認証が期限切れです。再接続してください。','error');
+    throw new Error('Token expired');
+  }
+  if(!resp.ok)throw new Error('Drive API error: '+resp.status);
+  return resp.json();
+}
+
+async function fetchDriveFiles(){
+  if(!_gdriveAccessToken)return;
+  try{
+    const fields='files(id,name,mimeType,modifiedTime,viewedByMeTime,webViewLink,iconLink,thumbnailLink)';
+    const q=encodeURIComponent("trashed=false");
+    const url='https://www.googleapis.com/drive/v3/files?'+
+      'orderBy=viewedByMeTime+desc&pageSize=20&q='+q+
+      '&fields='+encodeURIComponent(fields);
+    const data=await gdriveApiFetch(url);
+    state.gdriveFiles=(data.files||[]).map(function(f){
+      return{
+        id:f.id,
+        name:f.name,
+        mimeType:f.mimeType,
+        modifiedTime:f.modifiedTime,
+        viewedByMeTime:f.viewedByMeTime,
+        webViewLink:f.webViewLink,
+        iconLink:f.iconLink,
+      };
+    });
+    save();
+    console.log('[GDrive] Fetched',state.gdriveFiles.length,'files');
+  }catch(e){
+    console.error('Failed to fetch Drive files:',e);
+  }
+}
+
+function driveFileIcon(mimeType){
+  if(!mimeType)return '📎';
+  if(mimeType.includes('document'))return '📄';
+  if(mimeType.includes('spreadsheet'))return '📊';
+  if(mimeType.includes('presentation'))return '📽';
+  if(mimeType.includes('folder'))return '📁';
+  if(mimeType.includes('form'))return '📋';
+  if(mimeType.includes('pdf')||mimeType==='application/pdf')return '📕';
+  if(mimeType.includes('image'))return '🖼';
+  if(mimeType.includes('video'))return '🎬';
+  return '📎';
+}
+
+async function doConnectGdrive(){
+  if(!GCAL_CLIENT_ID){
+    showToast('Google Client IDが未設定です','error');
+    closeModal();return;
+  }
+  const btn=event?.target;
+  if(btn){btn.textContent='接続中...';btn.disabled=true;}
+  try{
+    if(typeof google==='undefined'||!google.accounts){
+      showToast('Google認証ライブラリを読み込み中です。少し待ってから再試行してください。','error');
+      if(btn){btn.textContent='連携を開始';btn.disabled=false;}
+      return;
+    }
+    if(!_gdriveTokenClient){
+      _gdriveTokenClient=google.accounts.oauth2.initTokenClient({
+        client_id:GCAL_CLIENT_ID,
+        scope:GDRIVE_SCOPES,
+        callback:async(tokenResponse)=>{
+          if(tokenResponse.error){
+            showToast('認証に失敗しました: '+tokenResponse.error,'error');
+            return;
+          }
+          _gdriveAccessToken=tokenResponse.access_token;
+          state.gdriveConnected=true;
+          save();updateIntDots();closeModal();
+          showToast('Google Driveと連携しました','success');
+          await fetchDriveFiles();
+          renderAll();
+        },
+      });
+    }
+    _gdriveTokenClient.requestAccessToken();
+  }catch(e){
+    console.error('GDrive connect error:',e);
+    showToast('連携に失敗しました: '+e.message,'error');
+    if(btn){btn.textContent='連携を開始';btn.disabled=false;}
+  }
+}
+
+function doDisconnectGdrive(){
+  if(_gdriveAccessToken&&typeof google!=='undefined'&&google.accounts){
+    try{google.accounts.oauth2.revoke(_gdriveAccessToken);}catch(e){}
+  }
+  _gdriveAccessToken=null;_gdriveTokenClient=null;
+  state.gdriveConnected=false;state.gdriveFiles=[];
+  save();updateIntDots();closeModal();
+  showToast('Google Driveの連携を解除しました');renderAll();
+}
+
+async function doRefreshGdrive(){
+  if(_gdriveAccessToken){
+    await fetchDriveFiles();
+    showToast('ドライブのファイルを更新しました');
     closeModal();renderAll();
   }else{
     showToast('再認証が必要です。連携を解除して再接続してください。','error');
@@ -2809,6 +3001,7 @@ function sendGchatNotification(text){
 
 function updateIntDots(){
   document.getElementById('gcal-dot').className='int-dot '+(state.gcalConnected?'connected':'disconnected');
+  document.getElementById('gdrive-dot').className='int-dot '+(state.gdriveConnected?'connected':'disconnected');
   document.getElementById('gchat-dot').className='int-dot '+(state.gchatConnected?'connected':'disconnected');
 }
 
