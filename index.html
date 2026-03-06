@@ -1070,6 +1070,7 @@ function renderHome(c){
     '<div style="display:flex;gap:8px">'+
       '<button class="btn btn-primary btn-sm" onclick="navTo(\'today\',null,null,null,document.getElementById(\'nav-today\'))">⚡ 今日のアクション</button>'+
       '<button class="btn btn-ghost btn-sm" onclick="openAddTask()">＋ タスク追加</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="openCsvExport()" title="タスク一覧をCSVでダウンロード">📥 CSV出力</button>'+
     '</div></div>';
   h+='<div class="home-stats">'+
     chip('blue',total-done,'残タスク',"navTo('all',null,null,null,document.getElementById('nav-all'))")+
@@ -2433,6 +2434,7 @@ function buildModal(type,...args){
   if(type==='integrations')return buildIntegrations();
   if(type==='gchatSetup')return buildGchatSetup();
   if(type==='kanbanSettings')return buildKanbanSettings();
+  if(type==='csvExport')return buildCsvExport();
   return'';
 }
 
@@ -3116,6 +3118,94 @@ function showToast(msg,type='success'){
 // ============================================================
 function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('mobOverlay').classList.add('show')}
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('mobOverlay').classList.remove('show')}
+
+// ============================================================
+// CSV EXPORT
+// ============================================================
+function openCsvExport(){
+  openModal('csvExport');
+  setTimeout(()=>{
+    const t=today();const m=new Date();m.setDate(m.getDate()-30);
+    const f=document.getElementById('m-csv-from');const to=document.getElementById('m-csv-to');
+    if(f)f.value=m.toISOString().slice(0,10);if(to)to.value=t;
+    updateCsvPreview();
+  },50);
+}
+function buildCsvExport(){
+  return`<div class="modal-title">CSV出力<span class="modal-close" onclick="closeModal()">✕</span></div>
+  <div class="form-group"><label class="form-label">抽出基準</label>
+  <select class="form-input form-select" id="m-csv-basis" onchange="updateCsvPreview()">
+    <option value="created">作成日</option>
+    <option value="startDate">開始日</option>
+    <option value="dueDate">締切日</option>
+    <option value="actionDate">アクション日</option>
+  </select></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">開始</label><input class="form-input" type="date" id="m-csv-from" onchange="updateCsvPreview()"></div>
+    <div class="form-group"><label class="form-label">終了</label><input class="form-input" type="date" id="m-csv-to" onchange="updateCsvPreview()"></div>
+  </div>
+  <div style="margin-top:8px;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2)" id="m-csv-preview">-</div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-ghost" onclick="exportTasksCsv()">全件出力</button>
+    <button class="btn btn-primary" onclick="exportTasksCsv(document.getElementById('m-csv-from').value,document.getElementById('m-csv-to').value,document.getElementById('m-csv-basis').value)">📥 ダウンロード</button>
+  </div>`;
+}
+function updateCsvPreview(){
+  const from=document.getElementById('m-csv-from')?.value;
+  const to=document.getElementById('m-csv-to')?.value;
+  const basis=document.getElementById('m-csv-basis')?.value||'created';
+  const basisLabel={created:'作成日',startDate:'開始日',dueDate:'締切日',actionDate:'アクション日'}[basis];
+  const count=filterTasksForCsv(getAllTasks(),from,to,basis).length;
+  const el=document.getElementById('m-csv-preview');
+  if(el)el.innerHTML='📋 対象: <b>'+count+'件</b>（'+basisLabel+'が '+esc(from||'---')+' 〜 '+esc(to||'---')+' のタスク）';
+}
+function filterTasksForCsv(all,from,to,basis){
+  if(!from&&!to)return all;
+  return all.filter(t=>{
+    let d=basis==='created'?(t.created?new Date(t.created).toISOString().slice(0,10):''):(t[basis]||'');
+    if(!d)return false;
+    if(from&&d<from)return false;
+    if(to&&d>to)return false;
+    return true;
+  });
+}
+function exportTasksCsv(from,to,basis){
+  let all=getAllTasks();
+  if(from||to)all=filterTasksForCsv(all,from,to,basis);
+  const todayStr=today();
+  const headers=['企業','プロジェクト','タスク名','ステータス','優先度','開始日','締切日','アクション日','作成日','完了判定','経過日数','残日数','Todo総数','Todo完了数','Todo進捗率','メモ','GoogleドキュメントURL'];
+  const statusMap={todo:'未着手',doing:'進行中',done:'完了'};
+  const priMap={high:'高',med:'中',low:'低'};
+  function diffDays(a,b){if(!a||!b)return '';return Math.round((new Date(b)-new Date(a))/(1000*60*60*24));}
+  const rows=all.map(t=>{
+    const todoTotal=(t.todos||[]).length;
+    const todoDone=(t.todos||[]).filter(d=>d.done).length;
+    const startD=t.startDate||t.created?new Date(t.created||t.startDate).toISOString().slice(0,10):'';
+    const elapsed=startD?diffDays(startD,todayStr):'';
+    const remaining=t.dueDate?diffDays(todayStr,t.dueDate):'';
+    return [
+      t.companyName,t.projectName,t.title,
+      statusMap[t.status]||t.status,priMap[t.priority]||t.priority,
+      t.startDate||'',t.dueDate||'',t.actionDate||'',
+      t.created?new Date(t.created).toISOString().slice(0,10):'',
+      t.status==='done'?'完了':'未完了',
+      elapsed,remaining,todoTotal,todoDone,
+      todoTotal?Math.round(todoDone/todoTotal*100)+'%':'',
+      (t.note||'').replace(/\n/g,' '),t.gdocUrl||''
+    ];
+  });
+  const csvEsc=v=>{const s=String(v??'');return s.includes(',')||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;};
+  const csv='\uFEFF'+[headers.map(csvEsc).join(','),...rows.map(r=>r.map(csvEsc).join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='stride_tasks_'+todayStr+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  URL.revokeObjectURL(url);
+  closeModal();
+  showToast(`タスク${all.length}件をCSVでダウンロードしました`);
+}
 
 // ============================================================
 // KEYBOARD
