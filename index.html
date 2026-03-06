@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Stride — Enterprise Task Manager</title>
+<link rel="icon" type="image/png" href="スクリーンショット 2026-02-28 17.36.16.png">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -59,7 +60,7 @@ input,textarea,select{font-family:inherit;outline:none}
 .app-logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;color:var(--text)}
 .logo-mark{width:26px;height:26px;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px}
 .sidebar-section{padding:4px 8px;margin-top:4px}
-.sidebar-section-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;padding:6px 8px 4px}
+.sidebar-section-label{font-size:12.5px;font-weight:700;color:var(--text2);letter-spacing:.5px;padding:8px 10px 6px}
 .nav-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--radius-sm);cursor:pointer;color:var(--text2);transition:all .12s;font-size:13.5px;position:relative}
 .nav-row:hover{background:var(--border);color:var(--text)}
 .nav-row.active{background:var(--accent);color:#fff}
@@ -67,13 +68,13 @@ input,textarea,select{font-family:inherit;outline:none}
 .nav-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
 .nav-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nav-badge{margin-left:auto;background:var(--border2);color:var(--text2);border-radius:20px;padding:1px 7px;font-size:11px;font-weight:600;flex-shrink:0}
-.nav-chevron{color:var(--text3);font-size:11px;transition:transform .15s;flex-shrink:0}
+.nav-chevron{color:var(--text3);font-size:14px;transition:transform .15s;flex-shrink:0}
 .nav-chevron.open{transform:rotate(90deg)}
 .company-tree{padding-left:0}
 .company-node{}
 .project-node{padding-left:16px}
 .task-node{padding-left:32px}
-.add-btn-inline{opacity:0;padding:4px 8px;border-radius:4px;font-size:11px;color:var(--text3);transition:opacity .12s}
+.add-btn-inline{opacity:0;padding:4px 10px;border-radius:5px;font-size:14px;color:var(--text3);transition:opacity .12s}
 .nav-row:hover .add-btn-inline{opacity:1}
 .add-btn-inline:hover{color:var(--accent);background:var(--accent-light)}
 .sidebar-footer{margin-top:auto;padding:12px 8px;border-top:1px solid var(--border)}
@@ -451,7 +452,10 @@ textarea.form-input{resize:vertical;min-height:72px}
     <button class="btn-icon" onclick="openModal('addCompany')" title="企業を追加">＋</button>
   </div>
   <div class="sidebar-section">
-    <div class="sidebar-section-label">ダッシュボード</div>
+    <div class="sidebar-section-label" style="display:flex;align-items:center;cursor:pointer" onclick="toggleDashboard()">
+      <span style="flex:1">ダッシュボード</span>
+      <span class="nav-chevron" id="dashboard-chevron">›</span>
+    </div>
     <div class="nav-row" id="nav-home" onclick="navTo('home',null,null,null,this)">
       <span class="nav-icon">🏠</span><span class="nav-label" style="font-weight:600">ホーム</span>
     </div>
@@ -463,15 +467,17 @@ textarea.form-input{resize:vertical;min-height:72px}
       <span class="nav-icon">☀️</span><span class="nav-label">今日のアクション</span>
       <span class="nav-badge" id="badge-today">0</span>
     </div>
-    <div class="nav-row" id="nav-overdue" onclick="navTo('overdue',null,null,null,this)">
-      <span class="nav-icon">🔴</span><span class="nav-label">期限超過</span>
-      <span class="nav-badge" id="badge-overdue" style="background:var(--red);color:#fff;display:none">0</span>
-    </div>
-    <div class="nav-row" id="nav-timeline" onclick="navTo('timeline',null,null,null,this)">
-      <span class="nav-icon">📊</span><span class="nav-label">タイムライン</span>
-    </div>
-    <div class="nav-row" id="nav-kanban" onclick="navTo('kanban_nav',null,null,null,this)">
-      <span class="nav-icon">⬛</span><span class="nav-label">カンバン（全体）</span>
+    <div id="dashboard-extra" style="display:none">
+      <div class="nav-row" id="nav-overdue" onclick="navTo('overdue',null,null,null,this)">
+        <span class="nav-icon">🔴</span><span class="nav-label">期限超過</span>
+        <span class="nav-badge" id="badge-overdue" style="background:var(--red);color:#fff;display:none">0</span>
+      </div>
+      <div class="nav-row" id="nav-timeline" onclick="navTo('timeline',null,null,null,this)">
+        <span class="nav-icon">📊</span><span class="nav-label">タイムライン</span>
+      </div>
+      <div class="nav-row" id="nav-kanban" onclick="navTo('kanban_nav',null,null,null,this)">
+        <span class="nav-icon">⬛</span><span class="nav-label">カンバン（全体）</span>
+      </div>
     </div>
   </div>
   <div class="sidebar-section" style="flex:1;overflow-y:auto;min-height:0">
@@ -576,10 +582,11 @@ let ui = {
   expandedProjects: {},
   statusFilter: 'all',
   expandedProjSections: {},
+  dashboardExpanded: false,
 };
 
 const STORAGE_KEY = 'stride_v3';
-function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({state,ui:{expandedCompanies:ui.expandedCompanies,expandedProjects:ui.expandedProjects,statusFilter:ui.statusFilter,expandedProjSections:ui.expandedProjSections,ganttZoom:ui.ganttZoom}}));}catch(e){}}
+function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({state,ui:{expandedCompanies:ui.expandedCompanies,expandedProjects:ui.expandedProjects,statusFilter:ui.statusFilter,expandedProjSections:ui.expandedProjSections,ganttZoom:ui.ganttZoom,dashboardExpanded:ui.dashboardExpanded}}));}catch(e){}}
 function load(){
   try{
     const d=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');
@@ -715,6 +722,7 @@ function renderSidebar(){
             ${tc?`<span class="nav-badge">${tc}</span>`:''}
             <span class="nav-chevron ${isExpP?'open':''}">›</span>
             <button class="add-btn-inline" onclick="event.stopPropagation();openAddTask('${c.id}','${p.id}')">＋</button>
+            <button class="add-btn-inline" onclick="event.stopPropagation();openModal('editProject','${c.id}','${p.id}')" title="プロジェクトを編集">✎</button>
           </div>
         </div>`;
       }).join('')}</div>`:''}
@@ -722,6 +730,13 @@ function renderSidebar(){
   }).join('');
 }
 
+function toggleDashboard(){
+  ui.dashboardExpanded=!ui.dashboardExpanded;save();
+  const extra=document.getElementById('dashboard-extra');
+  const chev=document.getElementById('dashboard-chevron');
+  if(extra)extra.style.display=ui.dashboardExpanded?'':'none';
+  if(chev)chev.classList.toggle('open',ui.dashboardExpanded);
+}
 function toggleCompany(id){ui.expandedCompanies[id]=ui.expandedCompanies[id]===false?true:false;save();renderSidebar()}
 function toggleProject(id){ui.expandedProjects[id]=ui.expandedProjects[id]===false?true:false;save();renderSidebar()}
 
@@ -2411,6 +2426,7 @@ function overlayClick(e){if(e.target===document.getElementById('overlay'))closeM
 function buildModal(type,...args){
   if(type==='addCompany')return buildAddCompany();
   if(type==='editCompany')return buildEditCompany(args[0]);
+  if(type==='editProject')return buildEditProject(args[0],args[1]);
   if(type==='addProject')return buildAddProject(args[0]);
   if(type==='addTask')return buildAddTask(args[0],args[1],args[2]);
   if(type==='editTask')return buildEditTask(args[0]);
@@ -2481,6 +2497,55 @@ function doDeleteCompany(cid){
   showToast(`「${c.name}」を削除しました`);
 }
 
+function buildEditProject(cid,pid){
+  const c=getCompany(cid);const p=c?.projects.find(x=>x.id===pid);if(!p)return'';
+  const taskCount=p.tasks.length;
+  const doneCount=p.tasks.filter(t=>t.status==='done').length;
+  return`<div class="modal-title">プロジェクトを編集<span class="modal-close" onclick="closeModal()">✕</span></div>
+  <div class="form-group"><label class="form-label">プロジェクト名</label><input class="form-input" id="m-epname" value="${esc(p.name)}"></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">開始日</label><input class="form-input" type="date" id="m-epstart" value="${p.startDate||''}"></div>
+    <div class="form-group"><label class="form-label">締め切り</label><input class="form-input" type="date" id="m-epdue" value="${p.dueDate||''}"></div>
+  </div>
+  <div class="form-group"><label class="form-label">ステータス</label>
+  <select class="form-input form-select" id="m-epstatus"><option value="todo" ${p.status==='todo'?'selected':''}>未着手</option><option value="doing" ${p.status==='doing'?'selected':''}>進行中</option><option value="done" ${p.status==='done'?'selected':''}>完了</option></select></div>
+  <div class="form-group"><label class="form-label">メモ</label><textarea class="form-input" id="m-epnote" rows="3" placeholder="プロジェクトのメモ...">${esc(p.note||'')}</textarea></div>
+  <div class="form-group"><label class="form-label">📄 Googleドキュメント URL</label><input class="form-input" id="m-epgdoc" value="${esc(p.gdocUrl||'')}" placeholder="https://docs.google.com/document/d/...">
+  ${p.gdocUrl?`<a href="${esc(p.gdocUrl)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:4px;font-size:12px;color:var(--accent)">📄 ドキュメントを開く ↗</a>`:''}</div>
+  <div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2)">
+    📋 タスク: ${taskCount}件（完了: ${doneCount}件）${taskCount?` / 進捗: ${Math.round(doneCount/taskCount*100)}%`:''}
+  </div>
+  <div class="modal-actions" style="justify-content:space-between">
+    <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="doDeleteProject('${cid}','${pid}')">🗑 プロジェクトを削除</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="doEditProject('${cid}','${pid}')">保存</button>
+    </div>
+  </div>`;
+}
+function doEditProject(cid,pid){
+  const c=getCompany(cid);const p=c?.projects.find(x=>x.id===pid);if(!p)return;
+  const name=document.getElementById('m-epname').value.trim();if(!name)return;
+  p.name=name;
+  p.startDate=document.getElementById('m-epstart').value;
+  p.dueDate=document.getElementById('m-epdue').value;
+  p.status=document.getElementById('m-epstatus').value;
+  p.note=document.getElementById('m-epnote').value;
+  p.gdocUrl=document.getElementById('m-epgdoc').value.trim();
+  save();closeModal();renderAll();
+  showToast(`「${name}」を更新しました`);
+}
+function doDeleteProject(cid,pid){
+  const c=getCompany(cid);const p=c?.projects.find(x=>x.id===pid);if(!p)return;
+  const taskCount=p.tasks.length;
+  if(!confirm(`「${p.name}」を削除しますか？\n（タスク${taskCount}件がすべて削除されます）`))return;
+  c.projects=c.projects.filter(x=>x.id!==pid);
+  if(ui.projectId===pid){ui.projectId=null;}
+  save();closeModal();closeDetail();
+  navTo('company',cid,null,null,null);
+  showToast(`「${p.name}」を削除しました`);
+}
+
 function buildAddProject(cid){
   const c=getCompany(cid);
   return`<div class="modal-title">${esc(c?.name||'')}にプロジェクトを追加<span class="modal-close" onclick="closeModal()">✕</span></div>
@@ -2491,12 +2556,14 @@ function buildAddProject(cid){
   </div>
   <div class="form-group"><label class="form-label">ステータス</label>
   <select class="form-input form-select" id="m-pstatus"><option value="todo">未着手</option><option value="doing" selected>進行中</option><option value="done">完了</option></select></div>
+  <div class="form-group"><label class="form-label">メモ</label><textarea class="form-input" id="m-pnote" rows="3" placeholder="プロジェクトのメモ..."></textarea></div>
+  <div class="form-group"><label class="form-label">📄 Googleドキュメント URL</label><input class="form-input" id="m-pgdoc" placeholder="https://docs.google.com/document/d/..."></div>
   <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button><button class="btn btn-primary" onclick="doAddProject('${cid}')">追加</button></div>`;
 }
 function doAddProject(cid){
   const c=getCompany(cid);if(!c)return;
   const name=document.getElementById('m-pname').value.trim();if(!name)return;
-  const p={id:uid(),name,status:document.getElementById('m-pstatus').value,startDate:document.getElementById('m-pstart').value,dueDate:document.getElementById('m-pdue').value,tasks:[]};
+  const p={id:uid(),name,status:document.getElementById('m-pstatus').value,startDate:document.getElementById('m-pstart').value,dueDate:document.getElementById('m-pdue').value,note:document.getElementById('m-pnote')?.value||'',gdocUrl:document.getElementById('m-pgdoc')?.value?.trim()||'',tasks:[]};
   c.projects.push(p);
   save();closeModal();renderAll();
   showToast(`「${name}」を追加しました`);
@@ -3063,6 +3130,13 @@ document.addEventListener('keydown',e=>{
 // ============================================================
 load();
 updateIntDots();
+// Restore dashboard collapsed state
+(function(){
+  const extra=document.getElementById('dashboard-extra');
+  const chev=document.getElementById('dashboard-chevron');
+  if(extra)extra.style.display=ui.dashboardExpanded?'':'none';
+  if(chev&&ui.dashboardExpanded)chev.classList.add('open');
+})();
 navTo('home',null,null,null,document.getElementById('nav-home'));
 setInterval(checkReminders,60000);
 checkReminders();
