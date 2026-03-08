@@ -623,6 +623,127 @@ function dueCls(ds,status){
 }
 function esc(s){return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
 
+// ===== RECURRING TASKS =====
+// recurrence model on task: { type:'monthly_day'|'monthly_weekday'|'weekly', day:1-31, week:1-5, weekday:0-6(Sun-Sat), interval:1, enabled:true }
+// recurrence also stores: lastGenerated:'YYYY-MM-DD' (last date a recurring instance was generated)
+
+function getNextRecurrenceDate(rec, afterDate){
+  // Calculate next occurrence date after afterDate
+  const after=new Date(afterDate+'T00:00:00');
+  if(rec.type==='monthly_day'){
+    // Every month on day N
+    let d=new Date(after);d.setDate(1);// start of month
+    d.setDate(rec.day);
+    if(d<=after){d.setMonth(d.getMonth()+1);d.setDate(rec.day);}
+    // Handle months with fewer days (e.g., day=31 in Feb)
+    if(d.getDate()!==rec.day){d.setDate(0);}// last day of prev month
+    return d.toISOString().slice(0,10);
+  }
+  if(rec.type==='monthly_weekday'){
+    // Every month on Nth weekday (e.g., 2nd Tuesday)
+    let d=new Date(after);d.setDate(1);
+    // Try this month first
+    let candidate=getNthWeekdayOfMonth(d.getFullYear(),d.getMonth(),rec.week,rec.weekday);
+    if(!candidate||new Date(candidate+'T00:00:00')<=after){
+      // Next month
+      d.setMonth(d.getMonth()+1);
+      candidate=getNthWeekdayOfMonth(d.getFullYear(),d.getMonth(),rec.week,rec.weekday);
+    }
+    return candidate;
+  }
+  if(rec.type==='weekly'){
+    // Every week on weekday
+    let d=new Date(after);
+    d.setDate(d.getDate()+1);// start from next day
+    for(let i=0;i<7;i++){
+      if(d.getDay()===rec.weekday)return d.toISOString().slice(0,10);
+      d.setDate(d.getDate()+1);
+    }
+  }
+  return null;
+}
+
+function getNthWeekdayOfMonth(year,month,week,weekday){
+  // week: 1-5, weekday: 0(Sun)-6(Sat)
+  const first=new Date(year,month,1);
+  let dayOfWeek=first.getDay();
+  let firstOccurrence=1+((weekday-dayOfWeek+7)%7);
+  let target=firstOccurrence+((week-1)*7);
+  // Check if target is valid for this month
+  const lastDay=new Date(year,month+1,0).getDate();
+  if(target>lastDay)return null;// 5th week doesn't exist
+  const d=new Date(year,month,target);
+  return d.toISOString().slice(0,10);
+}
+
+function generateRecurringTasks(){
+  const todayStr=today();
+  const lookAhead=addDays(todayStr,7);// generate up to 7 days ahead
+  let generated=false;
+  for(const c of state.companies){
+    for(const p of c.projects){
+      for(const t of p.tasks){
+        if(!t.recurrence||!t.recurrence.enabled)continue;
+        const rec=t.recurrence;
+        const lastGen=rec.lastGenerated||t.actionDate||t.startDate||todayStr;
+        let nextDate=getNextRecurrenceDate(rec,lastGen);
+        // Generate instances up to lookAhead
+        while(nextDate&&nextDate<=lookAhead){
+          // Check if already exists (avoid duplicates)
+          const exists=p.tasks.some(x=>x.recurrenceParentId===t.id&&x.actionDate===nextDate);
+          if(!exists){
+            const newTask={
+              id:uid(),
+              title:t.title,
+              priority:t.priority,
+              status:'todo',
+              startDate:nextDate,
+              dueDate:nextDate,
+              actionDate:nextDate,
+              actionStartTime:t.actionStartTime||'',
+              actionEndTime:t.actionEndTime||'',
+              note:t.note||'',
+              gdocUrl:t.gdocUrl||'',
+              gcal:t.gcal,
+              gchat:t.gchat,
+              todos:t.todos?t.todos.map(td=>({id:uid(),text:td.text,done:false,actionDate:nextDate,actionStartTime:td.actionStartTime||'',actionEndTime:td.actionEndTime||''})):[],
+              created:Date.now(),
+              recurrenceParentId:t.id,
+            };
+            p.tasks.push(newTask);
+            generated=true;
+            // Sync to Google Calendar
+            if(newTask.gcal&&state.gcalConnected&&_gcalAccessToken){
+              createGcalEvent(newTask,c,p);
+            }
+          }
+          rec.lastGenerated=nextDate;
+          nextDate=getNextRecurrenceDate(rec,nextDate);
+        }
+      }
+    }
+  }
+  if(generated){save();renderAll();}
+}
+
+function recurrenceLabel(rec){
+  if(!rec||!rec.enabled)return'なし';
+  const wdNames=['日','月','火','水','木','金','土'];
+  if(rec.type==='monthly_day')return`毎月 ${rec.day}日`;
+  if(rec.type==='monthly_weekday')return`毎月 第${rec.week}${wdNames[rec.weekday]}曜日`;
+  if(rec.type==='weekly')return`毎週 ${wdNames[rec.weekday]}曜日`;
+  return'なし';
+}
+
+function buildRecurrenceGcalRrule(rec){
+  // Returns Google Calendar RRULE string
+  const wdCodes=['SU','MO','TU','WE','TH','FR','SA'];
+  if(rec.type==='monthly_day')return`RRULE:FREQ=MONTHLY;BYMONTHDAY=${rec.day}`;
+  if(rec.type==='monthly_weekday')return`RRULE:FREQ=MONTHLY;BYDAY=${rec.week}${wdCodes[rec.weekday]}`;
+  if(rec.type==='weekly')return`RRULE:FREQ=WEEKLY;BYDAY=${wdCodes[rec.weekday]}`;
+  return null;
+}
+
 function seedDemo(){
   const c1=uid(),c2=uid();
   const p1=uid(),p2=uid(),p3=uid(),p4=uid();
@@ -972,6 +1093,7 @@ function renderTodayActionView(c,allT,todayStr){
             <span class="tag tag-project">${esc(t.projectName)}</span>
             ${isAction?'<span class="tag" style="background:#e8f0fb;color:var(--accent);font-weight:600">★ アクション日</span>':''}
             ${isDue&&!isAction?'<span class="tag tag-due today">📅 締め切り</span>':''}
+            ${t.recurrence?.enabled?'<span class="tag" style="background:#f0e8fb;color:#7c4ddb;font-weight:600">🔄 定期</span>':''}
             <span class="tag tag-priority-${t.priority}">${{high:'🔴 高',med:'🟡 中',low:'🟢 低'}[t.priority]}</span>
           </div>
         </div>
@@ -1507,6 +1629,7 @@ function taskItemHTML(t, inProjectList=false){
         <span class="tag tag-priority-${t.priority}">${{high:'🔴 高',med:'🟡 中',low:'🟢 低'}[t.priority]}</span>
         <span class="tag tag-status-${t.status}" style="font-size:11px">${{todo:'○ 未着手',doing:'◑ 進行中',done:'● 完了'}[t.status]}</span>
         ${t.dueDate?`<span class="tag tag-due ${dc}">📅 ${fmtDate(t.dueDate)}</span>`:''}
+        ${t.recurrence?.enabled?'<span class="tag" style="background:#f0e8fb;color:#7c4ddb;font-weight:600">🔄 定期</span>':''}
         ${t.gcal?'<span class="tag tag-gcal">📅 GCal</span>':''}
         ${t.gchat?'<span class="tag" style="background:#e8f8f0;color:#1a8a50">💬 GChat</span>':''}
       </div>
@@ -1708,6 +1831,22 @@ function renderDetail(id){
         <input class="detail-input" type="time" value="${t.actionEndTime||''}" onchange="saveDetailField('${id}','actionEndTime',this.value)" style="border-color:var(--accent);width:90px" placeholder="終了" title="終了時間">
       </div>
       <div style="font-size:10px;color:var(--text3);margin-top:3px">時間を設定するとGoogleカレンダーに時間指定イベントとして登録されます</div>
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-label">🔄 定期タスク</div>
+    <div style="padding:10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12.5px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-weight:600;color:${t.recurrence?.enabled?'var(--accent3)':'var(--text3)'}">
+          ${t.recurrence?.enabled?'✓ '+recurrenceLabel(t.recurrence):'未設定'}
+        </span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:11px" onclick="openRecurrenceSettings('${id}')">
+          ${t.recurrence?.enabled?'変更':'設定する'}
+        </button>
+        ${t.recurrence?.enabled?`<button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--red)" onclick="removeRecurrence('${id}')">解除</button>`:''}
+      </div>
+      <div style="font-size:10px;color:var(--text3)">定期的に繰り返されるタスクを自動生成します。Googleカレンダーにも反映されます。</div>
     </div>
   </div>
 
@@ -2435,6 +2574,7 @@ function buildModal(type,...args){
   if(type==='gchatSetup')return buildGchatSetup();
   if(type==='kanbanSettings')return buildKanbanSettings();
   if(type==='csvExport')return buildCsvExport();
+  if(type==='recurrence')return buildRecurrenceModal(args[0]);
   return'';
 }
 
@@ -2602,6 +2742,41 @@ function buildAddTask(cid,pid,defaultStatus='todo'){
   </div>
   <div class="form-group"><label class="form-label">メモ</label><textarea class="form-input" id="m-tnote" placeholder="メモ..."></textarea></div>
   <div class="form-group"><label class="form-label">📄 Googleドキュメント URL</label><input class="form-input" id="m-tgdoc" placeholder="https://docs.google.com/document/d/..."></div>
+  <div class="form-group">
+    <label class="form-label">🔄 定期タスク</label>
+    <select class="form-input form-select" id="m-trec-type" onchange="toggleAddTaskRecFields()">
+      <option value="">なし（単発）</option>
+      <option value="monthly_day">毎月 ○日</option>
+      <option value="monthly_weekday">毎月 第○週 ○曜日</option>
+      <option value="weekly">毎週 ○曜日</option>
+    </select>
+  </div>
+  <div id="m-trec-fields" style="display:none;margin-bottom:12px">
+    <div id="m-trec-monthly-day" class="form-group" style="display:none">
+      <label class="form-label">日にち</label>
+      <select class="form-input form-select" id="m-trec-day">
+        ${Array.from({length:31},(_,i)=>`<option value="${i+1}">${i+1}日</option>`).join('')}
+      </select>
+    </div>
+    <div id="m-trec-monthly-weekday" style="display:none">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">第○週</label>
+        <select class="form-input form-select" id="m-trec-week">
+          ${[1,2,3,4,5].map(w=>`<option value="${w}">第${w}週</option>`).join('')}
+        </select></div>
+        <div class="form-group"><label class="form-label">曜日</label>
+        <select class="form-input form-select" id="m-trec-weekday-mw">
+          ${['日','月','火','水','木','金','土'].map((n,i)=>`<option value="${i}">${n}曜日</option>`).join('')}
+        </select></div>
+      </div>
+    </div>
+    <div id="m-trec-weekly" class="form-group" style="display:none">
+      <label class="form-label">曜日</label>
+      <select class="form-input form-select" id="m-trec-weekday-w">
+        ${['日','月','火','水','木','金','土'].map((n,i)=>`<option value="${i}">${n}曜日</option>`).join('')}
+      </select>
+    </div>
+  </div>
   <div class="integration-section">
     <div class="integration-section-title">🔗 連携設定</div>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
@@ -2614,6 +2789,14 @@ function buildAddTask(cid,pid,defaultStatus='todo'){
     </label>
   </div>
   <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button><button class="btn btn-primary" onclick="doAddTask()">追加</button></div>`;
+}
+function toggleAddTaskRecFields(){
+  const type=document.getElementById('m-trec-type').value;
+  const fields=document.getElementById('m-trec-fields');
+  fields.style.display=type?'':'none';
+  document.getElementById('m-trec-monthly-day').style.display=type==='monthly_day'?'':'none';
+  document.getElementById('m-trec-monthly-weekday').style.display=type==='monthly_weekday'?'':'none';
+  document.getElementById('m-trec-weekly').style.display=type==='weekly'?'':'none';
 }
 function refreshProjectSelect(cid){
   const c=getCompany(cid);
@@ -2643,12 +2826,168 @@ function doAddTask(){
     todos:[],
     created:Date.now(),
   };
+  // Recurrence settings
+  const recType=document.getElementById('m-trec-type')?.value;
+  if(recType){
+    const rec={type:recType,enabled:true,lastGenerated:today()};
+    if(recType==='monthly_day'){rec.day=parseInt(document.getElementById('m-trec-day').value);}
+    else if(recType==='monthly_weekday'){rec.week=parseInt(document.getElementById('m-trec-week').value);rec.weekday=parseInt(document.getElementById('m-trec-weekday-mw').value);}
+    else if(recType==='weekly'){rec.weekday=parseInt(document.getElementById('m-trec-weekday-w').value);}
+    t.recurrence=rec;
+  }
   p.tasks.push(t);save();
-  if(t.gcal)createGcalEvent(t,c,p);
+  if(t.gcal&&t.recurrence){createGcalRecurringEvent(t,c,p);}
+  else if(t.gcal)createGcalEvent(t,c,p);
   if(t.gchat)sendGchatNotification(`📌 新規タスク: *${t.title}*\n企業: ${c.name} / プロジェクト: ${p.name}\n締切: ${t.dueDate||'未設定'}\n優先度: ${{high:'🔴高',med:'🟡中',low:'🟢低'}[t.priority]}`);
   closeModal();renderAll();
   selectTask(t.id);
   showToast(`「${title}」を追加しました`);
+}
+
+// ===== RECURRENCE MODAL =====
+function openRecurrenceSettings(taskId){
+  openModal('recurrence',taskId);
+}
+function buildRecurrenceModal(taskId){
+  const r=getTask(taskId);if(!r)return'';
+  const t=r.task;
+  const rec=t.recurrence||{type:'monthly_day',day:1,week:1,weekday:1,enabled:false};
+  const wdNames=['日','月','火','水','木','金','土'];
+  const html=`<div class="modal-title">🔄 定期タスク設定<span class="modal-close" onclick="closeModal()">✕</span></div>
+  <div style="margin-bottom:12px;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2)">
+    📋 対象タスク: <b>${esc(t.title)}</b>
+  </div>
+  <div class="form-group"><label class="form-label">繰り返しタイプ</label>
+  <select class="form-input form-select" id="m-rec-type" onchange="updateRecurrencePreview()">
+    <option value="monthly_day" ${rec.type==='monthly_day'?'selected':''}>毎月 ○日</option>
+    <option value="monthly_weekday" ${rec.type==='monthly_weekday'?'selected':''}>毎月 第○週 ○曜日</option>
+    <option value="weekly" ${rec.type==='weekly'?'selected':''}>毎週 ○曜日</option>
+  </select></div>
+
+  <div id="rec-monthly-day" class="form-group" style="display:${rec.type==='monthly_day'?'':'none'}">
+    <label class="form-label">日にち</label>
+    <select class="form-input form-select" id="m-rec-day" onchange="updateRecurrencePreview()">
+      ${Array.from({length:31},(_, i)=>`<option value="${i+1}" ${rec.day===(i+1)?'selected':''}>${i+1}日</option>`).join('')}
+    </select>
+  </div>
+
+  <div id="rec-monthly-weekday" style="display:${rec.type==='monthly_weekday'?'':'none'}">
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">第○週</label>
+      <select class="form-input form-select" id="m-rec-week" onchange="updateRecurrencePreview()">
+        ${[1,2,3,4,5].map(w=>`<option value="${w}" ${rec.week===w?'selected':''}>第${w}週</option>`).join('')}
+      </select></div>
+      <div class="form-group"><label class="form-label">曜日</label>
+      <select class="form-input form-select" id="m-rec-weekday-mw" onchange="updateRecurrencePreview()">
+        ${wdNames.map((n,i)=>`<option value="${i}" ${rec.weekday===i?'selected':''}>${n}曜日</option>`).join('')}
+      </select></div>
+    </div>
+  </div>
+
+  <div id="rec-weekly" class="form-group" style="display:${rec.type==='weekly'?'':'none'}">
+    <label class="form-label">曜日</label>
+    <select class="form-input form-select" id="m-rec-weekday-w" onchange="updateRecurrencePreview()">
+      ${wdNames.map((n,i)=>`<option value="${i}" ${rec.weekday===i?'selected':''}>${n}曜日</option>`).join('')}
+    </select>
+  </div>
+
+  <div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:4px">プレビュー</div>
+    <div id="rec-preview" style="font-size:13px;font-weight:600;color:var(--accent)"></div>
+    <div id="rec-next-dates" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
+  </div>
+
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="doSaveRecurrence('${taskId}')">設定する</button>
+  </div>
+`;
+  setTimeout(()=>updateRecurrencePreview(),50);
+  return html;
+}
+
+function updateRecurrencePreview(){
+  const type=document.getElementById('m-rec-type')?.value;
+  if(!type)return;
+  // Show/hide sections
+  document.getElementById('rec-monthly-day').style.display=type==='monthly_day'?'':'none';
+  document.getElementById('rec-monthly-weekday').style.display=type==='monthly_weekday'?'':'none';
+  document.getElementById('rec-weekly').style.display=type==='weekly'?'':'none';
+  // Build preview
+  const wdNames=['日','月','火','水','木','金','土'];
+  const rec=getRecurrenceFromModal();
+  const previewEl=document.getElementById('rec-preview');
+  const nextEl=document.getElementById('rec-next-dates');
+  if(previewEl)previewEl.textContent=recurrenceLabel(rec);
+  // Show next 3 dates
+  if(nextEl){
+    let dates=[];let d=today();
+    for(let i=0;i<3;i++){
+      const next=getNextRecurrenceDate(rec,d);
+      if(next){dates.push(next);d=next;}else break;
+    }
+    nextEl.textContent=dates.length?'次回: '+dates.join(' → '):'';
+  }
+}
+
+function getRecurrenceFromModal(){
+  const type=document.getElementById('m-rec-type').value;
+  const rec={type,enabled:true};
+  if(type==='monthly_day'){
+    rec.day=parseInt(document.getElementById('m-rec-day').value);
+  }else if(type==='monthly_weekday'){
+    rec.week=parseInt(document.getElementById('m-rec-week').value);
+    rec.weekday=parseInt(document.getElementById('m-rec-weekday-mw').value);
+  }else if(type==='weekly'){
+    rec.weekday=parseInt(document.getElementById('m-rec-weekday-w').value);
+  }
+  return rec;
+}
+
+function doSaveRecurrence(taskId){
+  const r=getTask(taskId);if(!r)return;
+  const rec=getRecurrenceFromModal();
+  rec.lastGenerated=today();
+  r.task.recurrence=rec;
+  save();closeModal();
+  renderDetail(taskId);renderAll();
+  // Sync to Google Calendar with RRULE if connected
+  if(r.task.gcal&&state.gcalConnected&&_gcalAccessToken){
+    createGcalRecurringEvent(r.task,r.company,r.project);
+  }
+  showToast('🔄 定期タスクを設定しました: '+recurrenceLabel(rec));
+  // Generate upcoming instances
+  generateRecurringTasks();
+}
+
+function removeRecurrence(taskId){
+  const r=getTask(taskId);if(!r)return;
+  if(!confirm('定期タスク設定を解除しますか？'))return;
+  delete r.task.recurrence;
+  save();renderDetail(taskId);renderAll();
+  showToast('定期タスク設定を解除しました');
+}
+
+async function createGcalRecurringEvent(task,company,project){
+  if(!state.gcalConnected||!_gcalAccessToken)return;
+  const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  const event=buildGcalEventBody(task,company,project);
+  const rrule=buildRecurrenceGcalRrule(task.recurrence);
+  if(rrule)event.recurrence=[rrule];
+  event.summary='🔄 '+event.summary;
+  try{
+    const created=await gcalApiFetch(
+      'https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',
+      {method:'POST',body:JSON.stringify(event)}
+    );
+    updateTask(task.id,{gcalEventId:created.id});
+    showToast('📅 定期イベントをGoogleカレンダーに登録しました');
+    await fetchGcalEvents();
+    if(ui.view==='home')renderContent();
+  }catch(e){
+    console.error('GCal recurring create failed:',e);
+    showToast('カレンダー登録に失敗しました','error');
+  }
 }
 
 function buildIntegrations(){
@@ -3230,6 +3569,9 @@ updateIntDots();
 navTo('home',null,null,null,document.getElementById('nav-home'));
 setInterval(checkReminders,60000);
 checkReminders();
+// Generate recurring tasks on load and every hour
+generateRecurringTasks();
+setInterval(generateRecurringTasks,3600000);
 // Notify if GCal was connected but token expired (page reload)
 if(state.gcalConnected&&!_gcalAccessToken){
   setTimeout(function(){
