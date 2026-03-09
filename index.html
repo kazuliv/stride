@@ -555,6 +555,7 @@ let state = {
   },
   gcalEvents: [],
   gcalCalendarId: 'primary',
+  gcalCalendars: [],
   gcalEmailId: '',
   gdriveConnected: false,
   gdriveFiles: [],
@@ -1884,6 +1885,7 @@ function renderDetail(id){
         <option value="both" ${t.gcalMode==='both'?'selected':''}>両方で登録</option>
       </select>
       <div style="font-size:10px;color:var(--text3);margin-top:4px">${t.gcalMode==='action'?'★ アクション日のイベントとして登録中':t.gcalMode==='due'?'📅 締切日のイベントとして登録中':t.gcalMode==='both'?'★ アクション日 + 📅 締切日の両方で登録中':t.gcal&&!t.gcalMode?'★ アクション日のイベントとして登録中（旧形式）':'選択するとカレンダーに反映されます'}</div>
+      ${(state.gcalCalendars||[]).length>0?'<div style="margin-top:8px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">登録先カレンダー</div><select class="detail-input" style="font-size:12px;padding:6px 8px" onchange="setTaskGcalCal(\''+id+'\',this.value)">'+(state.gcalCalendars||[]).map(function(c){return'<option value="'+esc(c.id)+'"'+(((t.gcalCalId||'')===(c.id))||(!(t.gcalCalId)&&c.primary)?' selected':'')+'>'+esc(c.summary)+(c.primary?' (デフォルト)':'')+'</option>';}).join('')+'</select></div>':''}
     </div>
     <div class="gchat-toggle ${t.gchat?'on':''}" onclick="toggleTaskGchat('${id}')">
       <div class="toggle-pill ${t.gchat?'gchat-on':''}"></div>
@@ -1930,7 +1932,7 @@ function setTodoActionDate(taskId,todoId,date){
   if(state.gcalConnected&&_gcalAccessToken&&date){
     syncTodoToGcal(r,td);
   } else if(state.gcalConnected&&_gcalAccessToken&&!date&&oldDate&&td.gcalEventId){
-    deleteTodoFromGcal(td);
+    deleteTodoFromGcal(td,r.task);
   }
   if(ui.view==='home') renderContent();
   else if(ui.selectedTaskId===taskId) renderDetail(taskId);
@@ -1946,7 +1948,7 @@ function setTodoActionTime(taskId,todoId,field,value){
   if(ui.selectedTaskId===taskId) renderDetail(taskId);
 }
 async function syncTodoToGcal(r,td){
-  var calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  var calId=getTaskCalId(r.task);
   var event={
     summary:'★ '+td.text+' ('+r.task.title+')',
     description:r.company.name+' / '+r.project.name,
@@ -1978,9 +1980,9 @@ async function syncTodoToGcal(r,td){
     showToast('カレンダー登録に失敗しました','error');
   }
 }
-async function deleteTodoFromGcal(td){
+async function deleteTodoFromGcal(td,task){
   if(!td.gcalEventId)return;
-  var calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  var calId=getTaskCalId(task);
   try{
     await fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+td.gcalEventId,{
       method:'DELETE',headers:{'Authorization':'Bearer '+_gcalAccessToken}
@@ -2052,9 +2054,17 @@ function setTaskGcalMode(id,mode){
   }
   renderDetail(id);renderContent();
 }
+function setTaskGcalCal(id,calId){
+  const r=getTask(id);if(!r)return;
+  updateTask(id,{gcalCalId:calId});
+  if(r.task.gcal&&r.task.gcalMode&&state.gcalConnected&&_gcalAccessToken){
+    syncGcalByMode(r.task,r.company,r.project);
+  }
+  renderDetail(id);
+}
 async function syncGcalByMode(task,company,project){
   const mode=task.gcalMode||'action';
-  const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  const calId=getTaskCalId(task);
   const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
   // Delete old events if they exist
   if(task.gcalEventId){
@@ -2854,6 +2864,7 @@ function buildAddTask(cid,pid,defaultStatus='todo'){
         <option value="both">両方で登録</option>
       </select>
     </div>
+    ${(state.gcalCalendars||[]).length>0?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:12px;color:var(--text2);white-space:nowrap">登録先</span><select class="form-input form-select" id="m-tgcalcal" style="flex:1;font-size:12px;padding:6px 8px">'+(state.gcalCalendars||[]).map(function(c){return'<option value="'+esc(c.id)+'"'+(c.primary?' selected':'')+'>'+esc(c.summary)+(c.primary?' (デフォルト)':'')+'</option>';}).join('')+'</select></div>':''}
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" id="m-tgchat" ${state.gchatConnected?'checked':''} style="accent-color:var(--accent3)">
       <span>💬 Google Chatに追加通知を送る</span>
@@ -2882,6 +2893,7 @@ function doAddTask(){
   const c=getCompany(cid);const p=c?.projects.find(x=>x.id===pid);
   if(!p)return;
   const gcalMode=document.getElementById('m-tgcalmode')?.value||'';
+  const gcalCalId=document.getElementById('m-tgcalcal')?.value||'';
   const gchat=document.getElementById('m-tgchat').checked;
   const t={
     id:uid(),title,
@@ -2893,6 +2905,7 @@ function doAddTask(){
     note:document.getElementById('m-tnote').value,
     gcal:!!gcalMode&&state.gcalConnected,
     gcalMode:gcalMode,
+    gcalCalId:gcalCalId,
     gchat:gchat&&state.gchatConnected,
     gdocUrl:document.getElementById('m-tgdoc')?.value?.trim()||'',
     todos:[],
@@ -3042,7 +3055,7 @@ function removeRecurrence(taskId){
 
 async function createGcalRecurringEvent(task,company,project){
   if(!state.gcalConnected||!_gcalAccessToken)return;
-  const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  const calId=getTaskCalId(task);
   const event=buildGcalEventBody(task,company,project);
   const rrule=buildRecurrenceGcalRrule(task.recurrence);
   if(rrule)event.recurrence=[rrule];
@@ -3160,7 +3173,7 @@ async function doConnectGcal(){
           }catch(e){console.warn('Could not fetch calendar ID:',e);}
           save();updateIntDots();closeModal();
           showToast('Googleカレンダーと連携しました','success');
-          await fetchGcalEvents();
+          await Promise.all([fetchGcalEvents(),fetchGcalCalendars()]);
           renderAll();
         },
       });
@@ -3177,7 +3190,7 @@ function doDisconnectGcal(){
     try{google.accounts.oauth2.revoke(_gcalAccessToken);}catch(e){}
   }
   _gcalAccessToken=null;_gcalTokenClient=null;
-  state.gcalConnected=false;state.gcalEvents=[];state.gcalEmailId='';
+  state.gcalConnected=false;state.gcalEvents=[];state.gcalCalendars=[];state.gcalEmailId='';
   save();updateIntDots();closeModal();
   showToast('Googleカレンダーの連携を解除しました');renderAll();
 }
@@ -3412,6 +3425,21 @@ async function fetchGcalEvents(){
   }
 }
 
+async function fetchGcalCalendars(){
+  if(!_gcalAccessToken)return;
+  try{
+    const data=await gcalApiFetch('https://www.googleapis.com/calendar/v3/users/me/calendarList');
+    state.gcalCalendars=(data.items||[]).filter(c=>c.accessRole==='owner'||c.accessRole==='writer').map(c=>({id:c.id,summary:c.summary||c.id,primary:!!c.primary}));
+    save();
+  }catch(e){
+    console.error('Failed to fetch calendar list:',e);
+  }
+}
+
+function getTaskCalId(task){
+  return encodeURIComponent(task?.gcalCalId||state.gcalCalendarId||'primary');
+}
+
 function buildGcalEventBody(task,company,project){
   var tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
   var ev={summary:'['+company.name+'] '+task.title,description:project.name+': '+(task.note||'')};
@@ -3434,7 +3462,7 @@ async function createGcalEvent(task,company,project){
     showToast('📅 カレンダー登録: 再認証が必要です','error');
     return;
   }
-  const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  const calId=getTaskCalId(task);
   const event=buildGcalEventBody(task,company,project);
   try{
     const created=await gcalApiFetch(
@@ -3452,7 +3480,7 @@ async function createGcalEvent(task,company,project){
 }
 async function updateGcalEvent(task,company,project){
   if(!state.gcalConnected||!_gcalAccessToken||!task.gcalEventId)return;
-  const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  const calId=getTaskCalId(task);
   const event=buildGcalEventBody(task,company,project);
   try{
     await gcalApiFetch(
