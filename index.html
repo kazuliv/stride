@@ -219,22 +219,37 @@ input,textarea,select{font-family:inherit;outline:none}
 
 /* Gcal-style week calendar */
 .gcal-wrap{overflow:hidden;border-radius:var(--radius-sm);border:1px solid var(--border)}
+.gcal-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.gcal-toolbar-btn{padding:3px 10px;border-radius:var(--radius-sm);font-size:11px;font-weight:600;cursor:pointer;color:var(--text2);transition:all .12s;border:1px solid transparent}
+.gcal-toolbar-btn:hover{background:var(--border)}
+.gcal-toolbar-btn.active{background:var(--accent);color:#fff}
+.gcal-toolbar-nav{display:flex;align-items:center;gap:4px}
+.gcal-toolbar-nav button{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;color:var(--text2);transition:all .12s}
+.gcal-toolbar-nav button:hover{background:var(--border)}
+.gcal-toolbar-title{font-size:13px;font-weight:700;color:var(--text);min-width:120px;text-align:center}
+.gcal-summary{display:flex;gap:12px;margin-left:auto;align-items:center;font-size:11px;color:var(--text2)}
+.gcal-summary-item{display:flex;align-items:center;gap:4px}
+.gcal-summary-val{font-weight:700;color:var(--accent);font-size:12px}
+.gcal-summary-rest{font-weight:700;color:var(--green);font-size:12px}
 .gcal-header{display:grid;background:var(--surface2);border-bottom:2px solid var(--border)}
-.gcal-day-head{padding:8px 4px;text-align:center;border-left:1px solid var(--border)}
+.gcal-day-head{padding:6px 4px;text-align:center;border-left:1px solid var(--border)}
 .gcal-day-head:first-child{border-left:none}
-.gcal-day-num{font-size:22px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%}
+.gcal-day-num{font-size:22px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;cursor:pointer;transition:background .12s}
+.gcal-day-num:hover{background:var(--border)}
 .gcal-day-num.today{background:var(--accent);color:#fff}
+.gcal-day-num.today:hover{background:var(--accent2)}
 .gcal-day-lbl{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
 .gcal-body{display:flex;overflow-y:auto;max-height:640px}
 .gcal-time-col{width:52px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface)}
 .gcal-time-slot{height:48px;display:flex;align-items:flex-start;padding-top:4px;padding-right:6px;font-size:10px;color:var(--text3);text-align:right;border-bottom:1px solid var(--border);box-sizing:border-box;justify-content:flex-end}
 .gcal-grid{flex:1;display:grid;position:relative;overflow:hidden}
-.gcal-col{border-left:1px solid var(--border);position:relative}
+.gcal-col{border-left:1px solid var(--border);position:relative;cursor:pointer}
 .gcal-col:first-child{border-left:none}
-.gcal-hour-line{position:absolute;left:0;right:0;border-top:1px solid var(--border)}
+.gcal-hour-line{position:absolute;left:0;right:0;border-top:1px solid var(--border);pointer-events:none}
 .gcal-event{position:absolute;border-radius:4px;padding:2px 5px;font-size:10px;color:#fff;font-weight:600;overflow:hidden;cursor:pointer;z-index:2;transition:filter .1s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
 .gcal-event:hover{filter:brightness(.88)}
-.gcal-now-line{position:absolute;left:0;right:0;height:2px;background:#ea4335;z-index:10}
+.gcal-event.log{opacity:.7;border:1px dashed rgba(255,255,255,.5)}
+.gcal-now-line{position:absolute;left:0;right:0;height:2px;background:#ea4335;z-index:10;pointer-events:none}
 .gcal-now-dot{position:absolute;left:-4px;top:-4px;width:10px;height:10px;border-radius:50%;background:#ea4335}
 
 .home-greeting{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
@@ -363,8 +378,8 @@ input,textarea,select{font-family:inherit;outline:none}
 /* ===== CALENDAR PLAN ===== */
 .calplan-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
 .calplan-top{overflow:hidden;flex-shrink:0;position:relative}
-.calplan-top iframe{width:100%;height:100%;border:0;display:block}
-.calplan-overlay{position:absolute;top:0;left:0;right:0;bottom:0;z-index:10;display:none;cursor:row-resize}
+.calplan-top .gcal-body{max-height:none}
+.calplan-top .gcal-wrap{border:0;border-radius:0}
 .calplan-divider{height:8px;background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);cursor:row-resize;flex-shrink:0;display:flex;align-items:center;justify-content:center;user-select:none;transition:background .12s}
 .calplan-divider:hover,.calplan-divider.dragging{background:var(--accent-light)}
 .calplan-divider::after{content:'';width:40px;height:3px;background:var(--text3);border-radius:2px;opacity:.4}
@@ -1283,26 +1298,13 @@ function renderHome(c){
     chip('green',pct+'%','完了率','')+
   '</div>';
 
-  // ── Row 1: 今週のスケジュール (full width) ──
-  var gcalEmbedSrc=gcalOk?buildGcalEmbedUrl():'';
+  // ── Row 1: カレンダー (full width) ──
   h+='<div class="home-layout">'+
     '<div class="home-row-full">'+
-      '<div class="home-card" style="padding-bottom:10px">'+
-        '<div class="home-card-header" style="margin-bottom:0">'+
-          '<div class="home-card-title">📅 今週のスケジュール</div>'+
-          '<div style="display:flex;gap:6px;align-items:center">'+
-            (gcalOk?'<span style="font-size:10px;background:#edfbf4;color:var(--green);padding:2px 7px;border-radius:10px;font-weight:600">GCal連携中</span>':'')+
-            (gcalOk?'<button class="btn btn-ghost btn-sm" onclick="window.open(\'https://calendar.google.com/calendar/r\',\'_blank\')" style="font-size:11px">📝 Googleカレンダーで編集</button>':'')+
-            '<button class="btn btn-ghost btn-sm" onclick="navTo(\'timeline\',null,null,null,document.getElementById(\'nav-timeline\'))" style="font-size:11px">ガントチャート↗</button>'+
-          '</div>'+
-        '</div>'+
-        (gcalOk&&gcalEmbedSrc?
-          '<div style="margin-top:10px;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)">'+
-            '<iframe src="'+gcalEmbedSrc+'" style="border:0;width:100%;height:600px" frameborder="0" scrolling="no"></iframe>'+
-          '</div>':
-          '<div id="homeWeekGrid" style="margin-top:10px"></div>')+
+      '<div class="home-card" style="padding:0;overflow:hidden">'+
+        '<div id="homeWeekGrid"></div>'+
         (!gcalOk?
-          '<div style="margin-top:8px;padding:6px 10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:space-between">'+
+          '<div style="padding:6px 10px;background:var(--surface2);border-radius:0 0 var(--radius-sm) var(--radius-sm);font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:space-between">'+
             '<span>📅 Googleカレンダーと連携するとイベントも表示されます</span>'+
             '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="openModal(\'integrations\')">連携する</button>'+
           '</div>':'')+
@@ -1412,10 +1414,7 @@ function renderHome(c){
 
   h+='</div>';// close home-layout
   c.innerHTML=h;
-  // Only build custom calendar if GCal embed is not shown
-  if(!gcalOk||!state.gcalEmailId){
-    setTimeout(function(){buildHomeWeekGrid(weekDays,todayStr);},50);
-  }
+  setTimeout(function(){buildHomeWeekGrid(weekDays,todayStr);},50);
 }
 
 
@@ -1436,29 +1435,109 @@ function removePinnedDoc(i){
   if(ui.view==='home')renderContent();
 }
 
-function buildHomeWeekGrid(weekDays, todayStr){
-  const grid = document.getElementById('homeWeekGrid');
+// ============================================================
+// STRIDE CALENDAR — self-built calendar (Phase 1)
+// ============================================================
+var _calViewMode='week'; // 'week' | 'day'
+var _calViewDate=null; // current anchor date, null=today
+
+function getCalViewDate(){return _calViewDate||today();}
+
+function calNav(dir){
+  var d=new Date(getCalViewDate()+'T00:00:00');
+  d.setDate(d.getDate()+(_calViewMode==='week'?dir*7:dir));
+  _calViewDate=localDateStr(d);
+  buildHomeWeekGrid();
+}
+function calToday(){_calViewDate=null;buildHomeWeekGrid();}
+function calSetMode(mode){
+  _calViewMode=mode;
+  buildHomeWeekGrid();
+}
+function calClickDay(dateStr){
+  _calViewMode='day';_calViewDate=dateStr;
+  buildHomeWeekGrid();
+}
+function calClickSlot(dateStr,hour){
+  // Open add action log dialog for clicked time slot
+  var h=String(hour).padStart(2,'0')+':00';
+  var eh=String(hour+1).padStart(2,'0')+':00';
+  openCalSlotAction(dateStr,h,eh);
+}
+function openCalSlotAction(dateStr,startTime,endTime){
+  // Show a quick action picker: add action log to existing task or set action date
+  var all=getAllTasks().filter(function(t){return t.status!=='done';});
+  if(!all.length){showToast('タスクがありません','error');return;}
+  var html='<div class="modal-title">📅 '+dateStr+' '+startTime+'〜'+endTime+'<span class="modal-close" onclick="closeModal()">✕</span></div>';
+  html+='<div style="margin-bottom:12px;font-size:12px;color:var(--text2)">タスクを選択して稼働ログを追加:</div>';
+  html+='<div style="max-height:400px;overflow-y:auto">';
+  for(var i=0;i<Math.min(all.length,30);i++){
+    var t=all[i];
+    html+='<div class="home-task-row" style="cursor:pointer" onclick="doCalSlotAddLog(\''+t.id+'\',\''+dateStr+'\',\''+startTime+'\',\''+endTime+'\')">'+
+      '<div style="width:7px;height:7px;border-radius:50%;background:'+(t.companyColor||'var(--accent)')+';flex-shrink:0"></div>'+
+      '<div style="flex:1;min-width:0"><div style="font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.title)+'</div>'+
+      '<div style="font-size:11px;color:var(--text3)">'+esc(t.companyName||'')+' · '+esc(t.projectName||'')+'</div></div>'+
+    '</div>';
+  }
+  html+='</div>';
+  html+='<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button></div>';
+  document.getElementById('modalContent').innerHTML=html;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function doCalSlotAddLog(taskId,dateStr,startTime,endTime){
+  var r=getTask(taskId);if(!r)return;
+  if(!r.task.actionLogs)r.task.actionLogs=[];
+  var log={id:uid(),date:dateStr,startTime:startTime,endTime:endTime};
+  r.task.actionLogs.push(log);
+  save();
+  // Sync to GCal
+  syncActionLogToGcal(r,log);
+  closeModal();
+  buildHomeWeekGrid();
+  showToast('稼働ログを追加しました');
+}
+
+function buildHomeWeekGrid(weekDaysParam, todayStrParam){
+  var grid=document.getElementById('homeWeekGrid');
   if(!grid) return;
 
-  // Collect all tasks that fall this week for the calendar
-  const all=getAllTasks();
-  // Build event objects: {date, startHour, endHour, title, color, id}
-  // We treat actionDate/dueDate as all-day events shown in top banner
-  // and startDate..dueDate tasks as multi-day bars
-  const HOUR_H=48; // px per hour
-  const START_HOUR=8;
-  const END_HOUR=24;
-  const HOURS=END_HOUR-START_HOUR;
-  const now=new Date();
-  const nowH=now.getHours()+(now.getMinutes()/60);
+  var todayStr=todayStrParam||today();
+  var anchorDate=getCalViewDate();
+  var now=new Date();
+  var nowH=now.getHours()+(now.getMinutes()/60);
+  var HOUR_H=48;
+  var START_HOUR=7;
+  var END_HOUR=24;
+  var HOURS=END_HOUR-START_HOUR;
+  var all=getAllTasks();
 
-  // All-day events per day (actionDate or dueDate on this week's dates)
-  const weekDates=weekDays.map(d=>d.date);
-  const allDayEvents={};
-  weekDates.forEach(d=>{allDayEvents[d]=[];});
+  // Build date range based on view mode
+  var viewDays=[];
+  if(_calViewMode==='day'){
+    var dd=new Date(anchorDate+'T00:00:00');
+    var ds=anchorDate;
+    viewDays.push({date:ds,label:['日','月','火','水','木','金','土'][dd.getDay()],num:dd.getDate(),month:dd.getMonth()+1,isToday:ds===todayStr});
+  } else {
+    var anchor=new Date(anchorDate+'T00:00:00');
+    var dayOfWeek=anchor.getDay();
+    var mondayOffset=dayOfWeek===0?-6:1-dayOfWeek;
+    for(var i=0;i<7;i++){
+      var dd=new Date(anchor);dd.setDate(anchor.getDate()+mondayOffset+i);
+      var ds=localDateStr(dd);
+      viewDays.push({date:ds,label:['日','月','火','水','木','金','土'][dd.getDay()],num:dd.getDate(),month:dd.getMonth()+1,isToday:ds===todayStr});
+    }
+  }
+  var COLS=viewDays.length;
+  var viewDates=viewDays.map(function(d){return d.date;});
+
+  // Collect events
+  var allDayEvents={};
+  var timedEvents={};
+  viewDates.forEach(function(d){allDayEvents[d]=[];timedEvents[d]=[];});
+
+  // Tasks → all-day events
   all.forEach(function(t){
     if(t.status==='done') return;
-    // All-day style: show on actionDate
     var tc=t.calColor||t.companyColor||'var(--accent)';
     if(t.actionDate&&allDayEvents[t.actionDate])
       allDayEvents[t.actionDate].push({id:t.id,title:t.title,color:tc,isAction:true});
@@ -1466,13 +1545,11 @@ function buildHomeWeekGrid(weekDays, todayStr){
       allDayEvents[t.dueDate].push({id:t.id,title:t.title,color:tc,isDue:true});
   });
 
-  // Timed events: tasks distributed as calendar entries + real Google Calendar events
-  const timedEvents={};
-  weekDates.forEach(d=>{timedEvents[d]=[];});
-  all.forEach(function(t,ti){
+  // Tasks → timed events (main actionStartTime)
+  all.forEach(function(t){
     if(t.status==='done') return;
-    const targetDate=t.actionDate&&weekDates.includes(t.actionDate)?t.actionDate:
-                     t.dueDate&&weekDates.includes(t.dueDate)?t.dueDate:null;
+    var targetDate=t.actionDate&&viewDates.includes(t.actionDate)?t.actionDate:
+                   t.dueDate&&viewDates.includes(t.dueDate)?t.dueDate:null;
     if(!targetDate) return;
     var tc=t.calColor||t.companyColor||'var(--accent)';
     if(t.actionStartTime){
@@ -1480,17 +1557,27 @@ function buildHomeWeekGrid(weekDays, todayStr){
       var eH=sH+1;
       if(t.actionEndTime){var ep=t.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
       timedEvents[targetDate].push({id:t.id,title:t.title,color:tc,startH:sH,endH:eH});
-    }else{
-      var h=START_HOUR + (ti % (HOURS-1));
-      timedEvents[targetDate].push({id:t.id,title:t.title,color:tc,startH:h,endH:h+1});
     }
   });
 
-  // Add Todos with action times as timed events
+  // Action logs → timed events (semi-transparent)
+  all.forEach(function(t){
+    if(t.status==='done') return;
+    var tc=t.calColor||t.companyColor||'var(--accent)';
+    (t.actionLogs||[]).forEach(function(log){
+      if(!log.date||!log.startTime||!log.endTime||!viewDates.includes(log.date)) return;
+      var sp=log.startTime.split(':');var sH=parseInt(sp[0])+parseInt(sp[1])/60;
+      var ep=log.endTime.split(':');var eH=parseInt(ep[0])+parseInt(ep[1])/60;
+      if(eH<=sH) return;
+      timedEvents[log.date].push({id:t.id,title:'📋 '+t.title,color:tc,startH:sH,endH:eH,isLog:true});
+    });
+  });
+
+  // Todos → timed events
   all.forEach(function(t){
     if(t.status==='done') return;
     (t.todos||[]).forEach(function(td){
-      if(!td.actionDate||td.done||!td.actionStartTime||!weekDates.includes(td.actionDate)) return;
+      if(!td.actionDate||td.done||!td.actionStartTime||!viewDates.includes(td.actionDate)) return;
       var parts=td.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
       var eH=sH+1;
       if(td.actionEndTime){var ep=td.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
@@ -1498,14 +1585,14 @@ function buildHomeWeekGrid(weekDays, todayStr){
     });
   });
 
-  // Integrate real Google Calendar events
+  // GCal events
   if(state.gcalEvents&&state.gcalEvents.length){
     state.gcalEvents.forEach(function(e){
       if(!e.start||!e.end)return;
       var startStr=e.start.slice(0,10);
       var endStr=e.end.slice(0,10);
       if(e.allDay){
-        weekDates.forEach(function(d){
+        viewDates.forEach(function(d){
           if(d>=startStr&&d<endStr&&allDayEvents[d]){
             allDayEvents[d].push({id:'gcal_'+e.id,title:'📅 '+e.summary,color:'#4285f4',isGcal:true,htmlLink:e.htmlLink});
           }
@@ -1522,73 +1609,127 @@ function buildHomeWeekGrid(weekDays, todayStr){
     });
   }
 
+  // Calculate work time summary for visible dates
+  var totalWorkMins=0;
+  var totalScheduledMins=0;
+  viewDates.forEach(function(d){
+    (timedEvents[d]||[]).forEach(function(e){
+      var mins=Math.round((e.endH-e.startH)*60);
+      if(e.isLog) totalWorkMins+=mins;
+      else if(!e.isGcal) totalScheduledMins+=mins;
+    });
+  });
+  // Also count main task actionStartTime/actionEndTime as work if it has both
+  all.forEach(function(t){
+    (t.actionLogs||[]).forEach(function(log){
+      if(!log.date||!log.startTime||!log.endTime) return;
+      if(!viewDates.includes(log.date)) return;
+      // already counted above
+    });
+  });
+  var workH=Math.floor(totalWorkMins/60);var workM=totalWorkMins%60;
+  var schedH=Math.floor(totalScheduledMins/60);var schedM=totalScheduledMins%60;
+  var totalViewHours=HOURS*COLS;
+  var freeH=Math.max(0,totalViewHours-Math.floor((totalWorkMins+totalScheduledMins)/60));
+
+  // Build toolbar
+  var titleLabel='';
+  if(_calViewMode==='day'){
+    var dd=viewDays[0];
+    titleLabel=dd.month+'月'+dd.num+'日（'+dd.label+'）';
+  } else {
+    titleLabel=viewDays[0].month+'月'+viewDays[0].num+'日 〜 '+viewDays[6].month+'月'+viewDays[6].num+'日';
+  }
+
+  var toolbarHTML='<div class="gcal-toolbar">';
+  toolbarHTML+='<div class="gcal-toolbar-nav">';
+  toolbarHTML+='<button onclick="calNav(-1)" title="前へ">‹</button>';
+  toolbarHTML+='<button onclick="calToday()" title="今日" style="font-size:11px;width:auto;padding:0 8px">今日</button>';
+  toolbarHTML+='<button onclick="calNav(1)" title="次へ">›</button>';
+  toolbarHTML+='</div>';
+  toolbarHTML+='<div class="gcal-toolbar-title">'+titleLabel+'</div>';
+  toolbarHTML+='<div class="gcal-toolbar-btn '+(_calViewMode==='week'?'active':'')+'" onclick="calSetMode(\'week\')">週</div>';
+  toolbarHTML+='<div class="gcal-toolbar-btn '+(_calViewMode==='day'?'active':'')+'" onclick="calSetMode(\'day\')">日</div>';
+  toolbarHTML+='<div class="gcal-summary">';
+  if(totalWorkMins>0) toolbarHTML+='<div class="gcal-summary-item">稼働 <span class="gcal-summary-val">'+(workH?workH+'h':'')+(workM?workM+'m':'')+'</span></div>';
+  if(totalScheduledMins>0) toolbarHTML+='<div class="gcal-summary-item">予定 <span class="gcal-summary-val">'+(schedH?schedH+'h':'')+(schedM?schedM+'m':'')+'</span></div>';
+  toolbarHTML+='<div class="gcal-summary-item">余白 <span class="gcal-summary-rest">'+freeH+'h</span></div>';
+  toolbarHTML+='</div>';
+  toolbarHTML+='</div>';
+
   // Build header
-  const COLS=7;
-  let headerHTML='<div class="gcal-header" style="grid-template-columns:52px repeat('+COLS+',1fr)">';
+  var colTemplate=_calViewMode==='day'?'52px 1fr':'52px repeat('+COLS+',1fr)';
+  var headerHTML='<div class="gcal-header" style="grid-template-columns:'+colTemplate+'">';
   headerHTML+='<div style="border-bottom:none"></div>';
-  weekDays.forEach(function(d){
-    const isSun=d.label==='日';const isSat=d.label==='土';
-    const lcolor=d.isToday?'var(--accent)':isSun?'#dc3545':isSat?'var(--accent)':'var(--text3)';
+  viewDays.forEach(function(d){
+    var isSun=d.label==='日';var isSat=d.label==='土';
+    var lcolor=d.isToday?'var(--accent)':isSun?'#dc3545':isSat?'var(--accent)':'var(--text3)';
     headerHTML+='<div class="gcal-day-head">'+
       '<div class="gcal-day-lbl" style="color:'+lcolor+'">'+d.label+'</div>'+
-      '<div class="gcal-day-num'+(d.isToday?' today':'')+'">'+d.num+'</div>'+
-      // All-day event chips (max 2)
-      (allDayEvents[d.date]||[]).slice(0,2).map(function(e){
+      '<div class="gcal-day-num'+(d.isToday?' today':'')+'" onclick="calClickDay(\''+d.date+'\')">'+d.num+'</div>'+
+      (allDayEvents[d.date]||[]).slice(0,_calViewMode==='day'?6:2).map(function(e){
         var onclick=e.isGcal&&e.htmlLink?'window.open(\''+e.htmlLink.replace(/'/g,"\\'")+'\',\'_blank\')':'selectTask(\''+e.id+'\')';
-        return '<div style="background:'+e.color+';border-radius:3px;padding:1px 5px;margin:2px 2px 0;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-weight:600" onclick="'+onclick+'" title="'+e.title.replace(/"/g,'&quot;')+'">'+
-          (e.isAction?'★ ':'')+e.title+'</div>';
+        return '<div style="background:'+e.color+';border-radius:3px;padding:1px 5px;margin:2px 2px 0;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-weight:600" onclick="event.stopPropagation();'+onclick+'" title="'+e.title.replace(/"/g,'&quot;')+'">'+
+          (e.isAction?'★ ':e.isDue?'📅 ':'')+e.title+'</div>';
       }).join('')+
-      ((allDayEvents[d.date]||[]).length>2?'<div style="font-size:9px;color:var(--text3);margin-top:2px">+'+((allDayEvents[d.date]||[]).length-2)+' 件</div>':'')+
+      (function(){var total=(allDayEvents[d.date]||[]).length;var max=_calViewMode==='day'?6:2;return total>max?'<div style="font-size:9px;color:var(--text3);margin-top:2px">+'+(total-max)+' 件</div>':'';})()+
     '</div>';
   });
   headerHTML+='</div>';
 
-  // Build body: time col + 7 day cols
-  let bodyHTML='<div class="gcal-body">';
-  // Time column
+  // Build body
+  var bodyHTML='<div class="gcal-body">';
   bodyHTML+='<div class="gcal-time-col">';
-  for(let h=START_HOUR;h<END_HOUR;h++){
-    bodyHTML+='<div class="gcal-time-slot">'+(h===0?'':h+':00')+'</div>';
+  for(var h=START_HOUR;h<END_HOUR;h++){
+    bodyHTML+='<div class="gcal-time-slot">'+h+':00</div>';
   }
   bodyHTML+='</div>';
 
-  // Day grid columns
   bodyHTML+='<div class="gcal-grid" style="grid-template-columns:repeat('+COLS+',1fr)">';
-  weekDays.forEach(function(d,di){
-    const isToday=d.isToday;
-    bodyHTML+='<div class="gcal-col" style="height:'+(HOURS*HOUR_H)+'px;background:'+(isToday?'rgba(59,125,216,.03)':'var(--surface)')+';">';
-    // Hour grid lines
-    for(let h=0;h<HOURS;h++){
-      bodyHTML+='<div class="gcal-hour-line" style="top:'+(h*HOUR_H)+'px"></div>';
-      // Half-hour line
-      bodyHTML+='<div class="gcal-hour-line" style="top:'+(h*HOUR_H+HOUR_H/2)+'px;border-top-style:dashed;opacity:.4"></div>';
+  viewDays.forEach(function(d){
+    var isToday=d.isToday;
+    bodyHTML+='<div class="gcal-col" style="height:'+(HOURS*HOUR_H)+'px;background:'+(isToday?'rgba(59,125,216,.03)':'var(--surface)')+';" onclick="(function(e){if(e.target.classList.contains(\'gcal-col\')){var rect=e.target.getBoundingClientRect();var y=e.clientY-rect.top;var hour=Math.floor(y/'+HOUR_H+')+'+START_HOUR+';calClickSlot(\''+d.date+'\',hour);}})( event)">';
+    for(var hh=0;hh<HOURS;hh++){
+      bodyHTML+='<div class="gcal-hour-line" style="top:'+(hh*HOUR_H)+'px"></div>';
+      bodyHTML+='<div class="gcal-hour-line" style="top:'+(hh*HOUR_H+HOUR_H/2)+'px;border-top-style:dashed;opacity:.4"></div>';
     }
-    // Now line
     if(isToday&&nowH>=START_HOUR&&nowH<END_HOUR){
-      const nowTop=(nowH-START_HOUR)*HOUR_H;
+      var nowTop=(nowH-START_HOUR)*HOUR_H;
       bodyHTML+='<div class="gcal-now-line" style="top:'+nowTop+'px"><div class="gcal-now-dot"></div></div>';
     }
-    // Timed events for this day
-    const events=timedEvents[d.date]||[];
-    // Simple column layout: no overlap handling, just position them
+    // Overlap handling: assign columns to overlapping events
+    var events=(timedEvents[d.date]||[]).slice().sort(function(a,b){return a.startH-b.startH||a.endH-b.endH;});
+    var cols=[];
     events.forEach(function(e){
-      const top=(Math.max(e.startH,START_HOUR)-START_HOUR)*HOUR_H;
-      const height=Math.max((Math.min(e.endH,END_HOUR)-Math.max(e.startH,START_HOUR))*HOUR_H,20);
-      const title=e.title.replace(/"/g,'&quot;').replace(/</g,'&lt;');
-      var onclick=e.isGcal&&e.htmlLink?'window.open(\''+e.htmlLink.replace(/'/g,"\\'")+'\',\'_blank\')':'selectTask(\''+e.id+'\')';
-      bodyHTML+='<div class="gcal-event" style="top:'+(top+2)+'px;height:'+(height-4)+'px;left:4px;right:4px;background:'+e.color+'" onclick="'+onclick+'" title="'+title+'">'+
-        (e.isGcal?'📅 ':'')+e.title+'</div>';
+      var placed=false;
+      for(var ci=0;ci<cols.length;ci++){
+        if(cols[ci]<=e.startH){cols[ci]=e.endH;e._col=ci;placed=true;break;}
+      }
+      if(!placed){e._col=cols.length;cols.push(e.endH);}
+    });
+    var maxCols=Math.max(cols.length,1);
+    events.forEach(function(e){
+      var top=(Math.max(e.startH,START_HOUR)-START_HOUR)*HOUR_H;
+      var height=Math.max((Math.min(e.endH,END_HOUR)-Math.max(e.startH,START_HOUR))*HOUR_H,20);
+      var title=e.title.replace(/"/g,'&quot;').replace(/</g,'&lt;');
+      var onclick=e.isGcal&&e.htmlLink?'event.stopPropagation();window.open(\''+e.htmlLink.replace(/'/g,"\\'")+'\',\'_blank\')':'event.stopPropagation();selectTask(\''+e.id+'\')';
+      var colW=100/maxCols;
+      var left=e._col*colW;
+      var sTime='';
+      if(e.startH){var sh=Math.floor(e.startH);var sm=Math.round((e.startH-sh)*60);sTime=sh+':'+String(sm).padStart(2,'0');}
+      bodyHTML+='<div class="gcal-event'+(e.isLog?' log':'')+'" style="top:'+(top+1)+'px;height:'+(height-2)+'px;left:calc('+left+'% + 2px);width:calc('+colW+'% - 4px);background:'+e.color+'" onclick="'+onclick+'" title="'+title+'">'+
+        (e.isGcal?'📅 ':e.isLog?'':'')+(COLS===1&&sTime?'<span style="opacity:.7;font-size:9px">'+sTime+' </span>':'')+e.title+'</div>';
     });
     bodyHTML+='</div>';
   });
   bodyHTML+='</div></div>';
 
-  grid.innerHTML='<div class="gcal-wrap">'+headerHTML+bodyHTML+'</div>';
+  grid.innerHTML='<div class="gcal-wrap">'+toolbarHTML+headerHTML+bodyHTML+'</div>';
 
-  // Scroll to current time or 8am
-  const body=grid.querySelector('.gcal-body');
+  // Scroll to current time
+  var body=grid.querySelector('.gcal-body');
   if(body){
-    const scrollTo=Math.max(0,(nowH-START_HOUR-1))*HOUR_H;
+    var scrollTo=Math.max(0,(nowH-START_HOUR-1))*HOUR_H;
     setTimeout(function(){body.scrollTop=scrollTo;},10);
   }
 }
@@ -1922,22 +2063,12 @@ let _calplanFilter='all';
 let _calplanTopH=null;
 
 function renderCalendarPlan(container){
-  const gcalOk=state.gcalConnected&&_gcalAccessToken;
-  var gcalEmbedSrc=gcalOk?buildGcalEmbedUrl():'';
   const topH=_calplanTopH||Math.round(window.innerHeight*0.45);
   container.style.padding='0';container.style.overflow='hidden';container.style.display='flex';container.style.flexDirection='column';
   let h='<div class="calplan-wrap">';
-  // Top pane: calendar
+  // Top pane: self-built calendar
   h+='<div class="calplan-top" id="calplanTop" style="height:'+topH+'px">';
-  h+='<div class="calplan-overlay" id="calplanOverlay"></div>';
-  if(gcalOk&&gcalEmbedSrc){
-    h+='<iframe id="calplanIframe" src="'+gcalEmbedSrc+'"></iframe>';
-  } else {
-    h+='<div style="display:flex;align-items:center;justify-content:center;height:100%;background:var(--bg2);color:var(--text3);font-size:13px;flex-direction:column;gap:8px">';
-    h+='<span>📅 Googleカレンダーと連携するとここにカレンダーが表示されます</span>';
-    h+='<button class="btn btn-primary btn-sm" onclick="openModal(\'integrations\')">連携する</button>';
-    h+='</div>';
-  }
+  h+='<div id="homeWeekGrid" style="height:100%;overflow:auto"></div>';
   h+='</div>';
   // Divider
   h+='<div class="calplan-divider" id="calplanDivider"></div>';
@@ -1948,6 +2079,7 @@ function renderCalendarPlan(container){
   h+='</div>';
   container.innerHTML=h;
   initCalplanDivider();
+  setTimeout(function(){buildHomeWeekGrid();},50);
 }
 
 function buildCalplanTaskList(){
@@ -2069,24 +2201,19 @@ function calplanSetGcalMode(taskId,mode){
 }
 
 function calplanRefreshIframe(){
-  const iframe=document.getElementById('calplanIframe');
-  if(iframe){
-    // Reload after a short delay to allow GCal API to process
-    setTimeout(()=>{iframe.src=iframe.src;},1500);
-  }
+  // Refresh the self-built calendar after task changes
+  setTimeout(function(){buildHomeWeekGrid();},500);
 }
 
 function initCalplanDivider(){
   const divider=document.getElementById('calplanDivider');
   const top=document.getElementById('calplanTop');
-  const overlay=document.getElementById('calplanOverlay');
   if(!divider||!top)return;
   let startY,startH;
   function onMouseDown(e){
     e.preventDefault();
     startY=e.clientY;startH=top.offsetHeight;
     divider.classList.add('dragging');
-    if(overlay) overlay.style.display='block';
     document.body.style.cursor='row-resize';
     document.body.style.userSelect='none';
     document.addEventListener('mousemove',onMouseMove);
@@ -2102,7 +2229,6 @@ function initCalplanDivider(){
   }
   function onMouseUp(){
     divider.classList.remove('dragging');
-    if(overlay) overlay.style.display='none';
     document.body.style.cursor='';
     document.body.style.userSelect='';
     document.removeEventListener('mousemove',onMouseMove);
