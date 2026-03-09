@@ -1738,6 +1738,10 @@ function buildCalplanTaskList(){
       h+='<option value="due"'+(t.gcalMode==='due'?' selected':'')+'>📅日</option>';
       h+='<option value="both"'+(t.gcalMode==='both'?' selected':'')+'>両方</option>';
       h+='</select>';
+      var wt=calcTotalWorkTime(t);
+      if(wt) h+='<span style="font-size:10px;color:var(--accent);font-weight:600;white-space:nowrap" title="合計作業時間">'+wt.replace('合計: ','')+'</span>';
+      var logCount=(t.actionLogs||[]).length;
+      if(logCount) h+='<span style="font-size:9px;color:var(--text3);white-space:nowrap" title="アクションログ数">+'+logCount+'件</span>';
       h+='</div>';
       h+='</div>';
     }
@@ -1854,6 +1858,7 @@ function taskItemHTML(t, inProjectList=false){
         ${t.recurrence?.enabled?'<span class="tag" style="background:#f0e8fb;color:#7c4ddb;font-weight:600">🔄 定期</span>':''}
         ${t.gcal?`<span class="tag tag-gcal">📅 ${{action:'アクション',due:'締切',both:'両方'}[t.gcalMode]||'GCal'}</span>`:''}
         ${t.gchat?'<span class="tag" style="background:#e8f8f0;color:#1a8a50">💬 GChat</span>':''}
+        ${(t.actionLogs?.length)?`<span class="tag" style="background:#e8f0fb;color:var(--accent)">📋 ${calcTotalWorkTime(t).replace('合計: ','')}</span>`:''}
       </div>
       ${pct!==null?`<div class="progress-wrap"><div class="progress-track" style="margin-top:6px"><div class="progress-fill" style="width:${pct}%"></div></div></div>`:''}
     </div>
@@ -2054,6 +2059,14 @@ function renderDetail(id){
       </div>
       <div style="font-size:10px;color:var(--text3);margin-top:3px">時間を設定するとGoogleカレンダーに時間指定イベントとして登録されます</div>
     </div>
+    <div style="margin-top:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <div style="font-size:11px;color:var(--accent);font-weight:600">📋 アクションログ</div>
+        <span style="font-size:10px;color:var(--text3)">${calcTotalWorkTime(t)}</span>
+      </div>
+      <div id="det-action-logs">${renderActionLogs(t)}</div>
+      <button class="btn btn-ghost btn-sm" style="font-size:11px;margin-top:4px;width:100%" onclick="addActionLog('${id}')">＋ 作業時間を追加</button>
+    </div>
   </div>
 
   <div class="detail-section">
@@ -2214,6 +2227,134 @@ async function deleteTodoFromGcal(td,task){
     if(ui.view==='home')renderContent();
   }catch(e){
     console.error('GCal todo delete failed:',e);
+  }
+}
+
+// ===== ACTION LOGS =====
+function renderActionLogs(t){
+  const logs=t.actionLogs||[];
+  if(!logs.length) return '<div style="font-size:11px;color:var(--text3);padding:4px 0">追加の作業記録はありません</div>';
+  return logs.map(function(log,i){
+    const dur=calcLogDuration(log);
+    return '<div style="display:flex;align-items:center;gap:4px;padding:5px 8px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:3px;font-size:12px">'+
+      '<input type="date" value="'+(log.date||'')+'" onchange="updateActionLog(\''+t.id+'\',\''+log.id+'\',\'date\',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;width:115px;color:var(--text)">'+
+      '<input type="time" value="'+(log.startTime||'')+'" onchange="updateActionLog(\''+t.id+'\',\''+log.id+'\',\'startTime\',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;width:75px;color:var(--text)">'+
+      '<span style="font-size:10px;color:var(--text3)">〜</span>'+
+      '<input type="time" value="'+(log.endTime||'')+'" onchange="updateActionLog(\''+t.id+'\',\''+log.id+'\',\'endTime\',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;width:75px;color:var(--text)">'+
+      (dur?'<span style="font-size:10px;color:var(--accent);font-weight:600;margin-left:2px;white-space:nowrap">'+dur+'</span>':'')+
+      '<button style="margin-left:auto;color:var(--text3);font-size:12px;flex-shrink:0" onclick="removeActionLog(\''+t.id+'\',\''+log.id+'\')" title="削除">🗑</button>'+
+    '</div>';
+  }).join('');
+}
+
+function calcLogDuration(log){
+  if(!log.startTime||!log.endTime)return '';
+  const s=log.startTime.split(':').map(Number);
+  const e=log.endTime.split(':').map(Number);
+  const mins=(e[0]*60+e[1])-(s[0]*60+s[1]);
+  if(mins<=0)return '';
+  const h=Math.floor(mins/60);
+  const m=mins%60;
+  return h>0?(m>0?h+'h'+m+'m':h+'h'):m+'m';
+}
+
+function calcTotalWorkTime(t){
+  let totalMins=0;
+  // Main action time
+  if(t.actionStartTime&&t.actionEndTime){
+    const s=t.actionStartTime.split(':').map(Number);
+    const e=t.actionEndTime.split(':').map(Number);
+    const m=(e[0]*60+e[1])-(s[0]*60+s[1]);
+    if(m>0) totalMins+=m;
+  }
+  // Action logs
+  for(const log of (t.actionLogs||[])){
+    if(log.startTime&&log.endTime){
+      const s=log.startTime.split(':').map(Number);
+      const e=log.endTime.split(':').map(Number);
+      const m=(e[0]*60+e[1])-(s[0]*60+s[1]);
+      if(m>0) totalMins+=m;
+    }
+  }
+  if(!totalMins) return '';
+  const h=Math.floor(totalMins/60);
+  const m=totalMins%60;
+  return '合計: '+(h>0?(m>0?h+'h'+m+'m':h+'h'):m+'m');
+}
+
+function addActionLog(taskId){
+  const r=getTask(taskId);if(!r)return;
+  if(!r.task.actionLogs) r.task.actionLogs=[];
+  const log={id:uid(),date:r.task.actionDate||today(),startTime:'',endTime:'',gcalEventId:''};
+  r.task.actionLogs.push(log);
+  save();renderDetail(taskId);
+}
+
+function updateActionLog(taskId,logId,field,value){
+  const r=getTask(taskId);if(!r)return;
+  const log=(r.task.actionLogs||[]).find(l=>l.id===logId);
+  if(!log)return;
+  log[field]=value;
+  save();
+  // Sync to GCal if date and times are set
+  if(log.date&&log.startTime&&log.endTime&&state.gcalConnected&&_gcalAccessToken){
+    syncActionLogToGcal(r,log);
+  }
+  // Re-render logs section only (avoid full re-render flicker)
+  const logsEl=document.getElementById('det-action-logs');
+  if(logsEl) logsEl.innerHTML=renderActionLogs(r.task);
+  // Update total time label in detail panel
+  renderDetail(taskId);
+}
+
+function removeActionLog(taskId,logId){
+  const r=getTask(taskId);if(!r)return;
+  const logs=r.task.actionLogs||[];
+  const log=logs.find(l=>l.id===logId);
+  if(!log)return;
+  // Delete from GCal if synced
+  if(log.gcalEventId&&state.gcalConnected&&_gcalAccessToken){
+    deleteActionLogFromGcal(log,r.task);
+  }
+  r.task.actionLogs=logs.filter(l=>l.id!==logId);
+  save();renderDetail(taskId);
+}
+
+async function syncActionLogToGcal(r,log){
+  const calId=getTaskCalId(r.task);
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const event={
+    summary:'★ ['+r.company.name+'] '+r.task.title+' (ログ)',
+    description:r.project.name+': '+(r.task.note||''),
+    start:{dateTime:log.date+'T'+log.startTime+':00',timeZone:tz},
+    end:{dateTime:log.date+'T'+log.endTime+':00',timeZone:tz},
+  };
+  try{
+    if(log.gcalEventId){
+      await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+log.gcalEventId,{method:'PATCH',body:JSON.stringify(event)});
+      showToast('📅 アクションログのカレンダー予定を更新しました');
+    }else{
+      const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(event)});
+      log.gcalEventId=created.id;save();
+      showToast('📅 アクションログをカレンダーに登録しました');
+    }
+    await fetchGcalEvents();
+    if(ui.view==='home'||ui.view==='calplan')renderContent();
+  }catch(e){
+    console.error('GCal action log sync failed:',e);
+    showToast('カレンダー登録に失敗しました','error');
+  }
+}
+
+async function deleteActionLogFromGcal(log,task){
+  if(!log.gcalEventId)return;
+  const calId=getTaskCalId(task);
+  try{
+    await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+log.gcalEventId,{method:'DELETE'});
+    log.gcalEventId='';save();
+    showToast('📅 アクションログのカレンダー予定を削除しました');
+  }catch(e){
+    console.error('GCal action log delete failed:',e);
   }
 }
 
@@ -3716,6 +3857,24 @@ function syncGcalChangesToStride(eventsById){
               if(ev.end&&ev.end.length>10){
                 const et=ev.end.slice(11,16);
                 if(et&&td.actionEndTime&&et!==td.actionEndTime){td.actionEndTime=et;changed=true;}
+              }
+            }
+          }
+        }
+        // Check action logs with gcalEventId
+        if(t.actionLogs){
+          for(const log of t.actionLogs){
+            if(log.gcalEventId&&eventsById[log.gcalEventId]){
+              const ev=eventsById[log.gcalEventId];
+              const evDate=(ev.start||'').slice(0,10);
+              if(evDate&&log.date&&evDate!==log.date){log.date=evDate;changed=true;}
+              if(ev.start&&ev.start.length>10){
+                const st=ev.start.slice(11,16);
+                if(st&&log.startTime&&st!==log.startTime){log.startTime=st;changed=true;}
+              }
+              if(ev.end&&ev.end.length>10){
+                const et=ev.end.slice(11,16);
+                if(et&&log.endTime&&et!==log.endTime){log.endTime=et;changed=true;}
               }
             }
           }
