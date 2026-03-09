@@ -56,30 +56,32 @@ input,textarea,select{font-family:inherit;outline:none}
 .detail-panel.hidden{width:0;overflow:hidden;border-left:none}
 
 /* ===== SIDEBAR ===== */
-.sidebar-header{padding:16px 14px 10px;display:flex;align-items:center;justify-content:space-between}
+.sidebar-header{padding:12px 14px 6px;display:flex;align-items:center;justify-content:space-between}
 .app-logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;color:var(--text)}
 .logo-mark{width:26px;height:26px;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px}
-.sidebar-section{padding:4px 8px;margin-top:4px}
-.sidebar-section-label{font-size:12.5px;font-weight:700;color:var(--text2);letter-spacing:.5px;padding:8px 10px 6px}
-.nav-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--radius-sm);cursor:pointer;color:var(--text2);transition:all .12s;font-size:13.5px;position:relative}
+.sidebar-section{padding:2px 8px;margin-top:2px}
+.sidebar-section-label{font-size:11.5px;font-weight:700;color:var(--text2);letter-spacing:.5px;padding:5px 10px 3px}
+.nav-row{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;color:var(--text2);transition:all .12s;font-size:13px;position:relative}
 .nav-row:hover{background:var(--border);color:var(--text)}
 .nav-row.active{background:var(--accent);color:#fff}
 .nav-row.active .nav-badge{background:rgba(255,255,255,.3);color:#fff}
-.nav-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 .nav-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nav-badge{margin-left:auto;background:var(--border2);color:var(--text2);border-radius:20px;padding:1px 7px;font-size:11px;font-weight:600;flex-shrink:0}
 .nav-chevron{color:var(--text3);font-size:14px;transition:transform .15s;flex-shrink:0}
 .nav-chevron.open{transform:rotate(90deg)}
 .company-tree{padding-left:0}
 .company-node{}
-.project-node{padding-left:16px}
+.project-node{padding-left:14px}
 .task-node{padding-left:32px}
 .add-btn-inline{opacity:0;padding:4px 10px;border-radius:5px;font-size:14px;color:var(--text3);transition:opacity .12s}
 .nav-row:hover .add-btn-inline{opacity:1}
 .add-btn-inline:hover{color:var(--accent);background:var(--accent-light)}
-.sidebar-footer{margin-top:auto;padding:12px 8px;border-top:1px solid var(--border)}
-.integration-badge{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;transition:all .12s;font-size:12.5px}
+.sidebar-footer{margin-top:auto;padding:6px 10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px;justify-content:center}
+.integration-badge{display:flex;align-items:center;gap:4px;padding:4px 6px;border-radius:var(--radius-sm);cursor:pointer;transition:all .12s;font-size:11px}
 .integration-badge:hover{background:var(--border)}
+.integration-badge .int-label{display:none}
+.sidebar-footer:hover .integration-badge .int-label{display:inline}
 .int-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .int-dot.connected{background:var(--green)}
 .int-dot.disconnected{background:var(--text3)}
@@ -520,22 +522,22 @@ textarea.form-input{resize:vertical;min-height:72px}
     <div class="nav-row" id="nav-home" onclick="navTo('home',null,null,null,this)">
       <span class="nav-icon">🏠</span><span class="nav-label" style="font-weight:600">ホーム</span>
     </div>
-    <div class="nav-row active" id="nav-all" onclick="navTo('all',null,null,null,this)">
-      <span class="nav-icon">📋</span><span class="nav-label">すべてのタスク</span>
-      <span class="nav-badge" id="badge-all">0</span>
-    </div>
     <div class="nav-row" id="nav-today" onclick="navTo('today',null,null,null,this)">
       <span class="nav-icon">☀️</span><span class="nav-label">今日のアクション</span>
       <span class="nav-badge" id="badge-today">0</span>
     </div>
-    <div class="nav-row" id="nav-calplan" onclick="navTo('calplan',null,null,null,this)">
-      <span class="nav-icon">📅</span><span class="nav-label">カレンダー計画</span>
-    </div>
-    <div class="nav-row" id="nav-delegated" onclick="navTo('delegated',null,null,null,this)">
-      <span class="nav-icon">📤</span><span class="nav-label">委任済み</span>
-      <span class="nav-badge" id="badge-delegated" style="display:none">0</span>
-    </div>
     <div id="dashboard-extra" style="display:none">
+      <div class="nav-row active" id="nav-all" onclick="navTo('all',null,null,null,this)">
+        <span class="nav-icon">📋</span><span class="nav-label">すべてのタスク</span>
+        <span class="nav-badge" id="badge-all">0</span>
+      </div>
+      <div class="nav-row" id="nav-calplan" onclick="navTo('calplan',null,null,null,this)">
+        <span class="nav-icon">📅</span><span class="nav-label">カレンダー計画</span>
+      </div>
+      <div class="nav-row" id="nav-delegated" onclick="navTo('delegated',null,null,null,this)">
+        <span class="nav-icon">📤</span><span class="nav-label">委任済み</span>
+        <span class="nav-badge" id="badge-delegated" style="display:none">0</span>
+      </div>
       <div class="nav-row" id="nav-overdue" onclick="navTo('overdue',null,null,null,this)">
         <span class="nav-icon">🔴</span><span class="nav-label">期限超過</span>
         <span class="nav-badge" id="badge-overdue" style="background:var(--red);color:#fff;display:none">0</span>
@@ -555,17 +557,17 @@ textarea.form-input{resize:vertical;min-height:72px}
     <div id="companyTree"></div>
   </div>
   <div class="sidebar-footer">
-    <div class="integration-badge" onclick="openModal('integrations')">
+    <div class="integration-badge" onclick="openModal('integrations')" title="Googleカレンダー">
       <div class="int-dot" id="gcal-dot"></div>
-      <span style="font-size:12.5px;color:var(--text2)">Googleカレンダー</span>
+      <span class="int-label" style="color:var(--text2)">GCal</span>
     </div>
-    <div class="integration-badge" onclick="openModal('integrations')">
+    <div class="integration-badge" onclick="openModal('integrations')" title="Google Drive">
       <div class="int-dot" id="gdrive-dot"></div>
-      <span style="font-size:12.5px;color:var(--text2)">Google Drive</span>
+      <span class="int-label" style="color:var(--text2)">Drive</span>
     </div>
-    <div class="integration-badge" onclick="openModal('integrations')">
+    <div class="integration-badge" onclick="openModal('integrations')" title="Google Chat">
       <div class="int-dot" id="gchat-dot"></div>
-      <span style="font-size:12.5px;color:var(--text2)">Google Chat</span>
+      <span class="int-label" style="color:var(--text2)">Chat</span>
     </div>
   </div>
 </aside>
