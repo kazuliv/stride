@@ -1464,25 +1464,44 @@ function calClickSlot(dateStr,hour){
   var eh=String(hour+1).padStart(2,'0')+':00';
   openCalSlotAction(dateStr,h,eh);
 }
+var _calSlotMode='log'; // 'log' or 'action'
 function openCalSlotAction(dateStr,startTime,endTime){
-  // Show a quick action picker: add action log to existing task or set action date
   var all=getAllTasks().filter(function(t){return t.status!=='done';});
   if(!all.length){showToast('タスクがありません','error');return;}
   var html='<div class="modal-title">📅 '+dateStr+' '+startTime+'〜'+endTime+'<span class="modal-close" onclick="closeModal()">✕</span></div>';
-  html+='<div style="margin-bottom:12px;font-size:12px;color:var(--text2)">タスクを選択して稼働ログを追加:</div>';
+  html+='<div style="display:flex;gap:4px;margin-bottom:12px;background:var(--bg2);border-radius:var(--radius-sm);padding:2px">';
+  html+='<div class="calplan-filter-btn '+(_calSlotMode==='log'?'active':'')+'" onclick="_calSlotMode=\'log\';openCalSlotAction(\''+dateStr+'\',\''+startTime+'\',\''+endTime+'\')">📋 稼働ログ追加</div>';
+  html+='<div class="calplan-filter-btn '+(_calSlotMode==='action'?'active':'')+'" onclick="_calSlotMode=\'action\';openCalSlotAction(\''+dateStr+'\',\''+startTime+'\',\''+endTime+'\')">★ アクション日設定</div>';
+  html+='</div>';
   html+='<div style="max-height:400px;overflow-y:auto">';
   for(var i=0;i<Math.min(all.length,30);i++){
     var t=all[i];
-    html+='<div class="home-task-row" style="cursor:pointer" onclick="doCalSlotAddLog(\''+t.id+'\',\''+dateStr+'\',\''+startTime+'\',\''+endTime+'\')">'+
+    var onclick=_calSlotMode==='log'
+      ?'doCalSlotAddLog(\''+t.id+'\',\''+dateStr+'\',\''+startTime+'\',\''+endTime+'\')'
+      :'doCalSlotSetAction(\''+t.id+'\',\''+dateStr+'\',\''+startTime+'\',\''+endTime+'\')';
+    html+='<div class="home-task-row" style="cursor:pointer" onclick="'+onclick+'">'+
       '<div style="width:7px;height:7px;border-radius:50%;background:'+(t.companyColor||'var(--accent)')+';flex-shrink:0"></div>'+
       '<div style="flex:1;min-width:0"><div style="font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.title)+'</div>'+
       '<div style="font-size:11px;color:var(--text3)">'+esc(t.companyName||'')+' · '+esc(t.projectName||'')+'</div></div>'+
+      (t.actionDate?'<span style="font-size:10px;color:var(--text3)">★'+t.actionDate.slice(5)+'</span>':'')+
     '</div>';
   }
   html+='</div>';
   html+='<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button></div>';
   document.getElementById('modalContent').innerHTML=html;
   document.getElementById('modalOverlay').classList.add('show');
+}
+function doCalSlotSetAction(taskId,dateStr,startTime,endTime){
+  updateTask(taskId,{actionDate:dateStr,actionStartTime:startTime,actionEndTime:endTime});
+  var r=getTask(taskId);
+  if(r&&state.gcalConnected&&_gcalAccessToken){
+    if(!r.task.gcal){updateTask(taskId,{gcal:true,gcalMode:'action'});}
+    syncGcalByMode(r.task,r.company,r.project);
+  }
+  closeModal();
+  buildHomeWeekGrid();
+  updateBadges();
+  showToast('アクション日を設定しました');
 }
 function doCalSlotAddLog(taskId,dateStr,startTime,endTime){
   var r=getTask(taskId);if(!r)return;
@@ -1538,32 +1557,38 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
   // Tasks → all-day events
   all.forEach(function(t){
     if(t.status==='done') return;
-    var tc=t.calColor||t.companyColor||'var(--accent)';
+    var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
     if(t.actionDate&&allDayEvents[t.actionDate])
       allDayEvents[t.actionDate].push({id:t.id,title:t.title,color:tc,isAction:true});
     else if(t.dueDate&&allDayEvents[t.dueDate]&&t.actionDate!==t.dueDate)
       allDayEvents[t.dueDate].push({id:t.id,title:t.title,color:tc,isDue:true});
   });
 
-  // Tasks → timed events (main actionStartTime)
+  // Tasks → timed events (main actionStartTime) — only if no actionLogs exist for same time
   all.forEach(function(t){
     if(t.status==='done') return;
     var targetDate=t.actionDate&&viewDates.includes(t.actionDate)?t.actionDate:
                    t.dueDate&&viewDates.includes(t.dueDate)?t.dueDate:null;
     if(!targetDate) return;
-    var tc=t.calColor||t.companyColor||'var(--accent)';
+    var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
     if(t.actionStartTime){
-      var parts=t.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
-      var eH=sH+1;
-      if(t.actionEndTime){var ep=t.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
-      timedEvents[targetDate].push({id:t.id,title:t.title,color:tc,startH:sH,endH:eH});
+      // Skip if an actionLog covers the same time (avoid duplicate)
+      var hasMatchingLog=(t.actionLogs||[]).some(function(log){
+        return log.date===targetDate&&log.startTime===t.actionStartTime&&log.endTime===t.actionEndTime;
+      });
+      if(!hasMatchingLog){
+        var parts=t.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
+        var eH=sH+1;
+        if(t.actionEndTime){var ep=t.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
+        timedEvents[targetDate].push({id:t.id,title:t.title,color:tc,startH:sH,endH:eH});
+      }
     }
   });
 
   // Action logs → timed events (semi-transparent)
   all.forEach(function(t){
     if(t.status==='done') return;
-    var tc=t.calColor||t.companyColor||'var(--accent)';
+    var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
     (t.actionLogs||[]).forEach(function(log){
       if(!log.date||!log.startTime||!log.endTime||!viewDates.includes(log.date)) return;
       var sp=log.startTime.split(':');var sH=parseInt(sp[0])+parseInt(sp[1])/60;
@@ -1581,20 +1606,34 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
       var parts=td.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
       var eH=sH+1;
       if(td.actionEndTime){var ep=td.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
-      timedEvents[td.actionDate].push({id:t.id,title:'★ '+td.text,color:t.calColor||t.companyColor||'var(--accent)',startH:sH,endH:eH});
+      timedEvents[td.actionDate].push({id:t.id,title:'★ '+td.text,color:t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)',startH:sH,endH:eH});
     });
   });
 
-  // GCal events
+  // GCal events — filter out events already shown as Stride tasks/logs
   if(state.gcalEvents&&state.gcalEvents.length){
+    // Collect all gcalEventIds from Stride tasks/logs to avoid duplicates
+    var strideGcalIds={};
+    all.forEach(function(t){
+      if(t.gcalEventId) strideGcalIds[t.gcalEventId]=true;
+      if(t.gcalEventIdDue) strideGcalIds[t.gcalEventIdDue]=true;
+      (t.actionLogs||[]).forEach(function(log){
+        if(log.gcalEventId) strideGcalIds[log.gcalEventId]=true;
+      });
+      (t.todos||[]).forEach(function(td){
+        if(td.gcalEventId) strideGcalIds[td.gcalEventId]=true;
+      });
+    });
+    var gcalColor=state.calGcalColor||'#4285f4';
     state.gcalEvents.forEach(function(e){
       if(!e.start||!e.end)return;
+      if(strideGcalIds[e.id]) return; // skip — already shown as Stride event
       var startStr=e.start.slice(0,10);
       var endStr=e.end.slice(0,10);
       if(e.allDay){
         viewDates.forEach(function(d){
           if(d>=startStr&&d<endStr&&allDayEvents[d]){
-            allDayEvents[d].push({id:'gcal_'+e.id,title:'📅 '+e.summary,color:'#4285f4',isGcal:true,htmlLink:e.htmlLink});
+            allDayEvents[d].push({id:'gcal_'+e.id,title:'📅 '+e.summary,color:gcalColor,isGcal:true,htmlLink:e.htmlLink});
           }
         });
       }else{
@@ -1603,7 +1642,7 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
           var sH=st.getHours()+st.getMinutes()/60;
           var eH=en.getHours()+en.getMinutes()/60;
           if(eH<=sH)eH=sH+0.5;
-          timedEvents[startStr].push({id:'gcal_'+e.id,title:e.summary,color:'#4285f4',startH:sH,endH:eH,isGcal:true,htmlLink:e.htmlLink});
+          timedEvents[startStr].push({id:'gcal_'+e.id,title:e.summary,color:gcalColor,startH:sH,endH:eH,isGcal:true,htmlLink:e.htmlLink});
         }
       }
     });
@@ -3851,6 +3890,25 @@ function buildIntegrations(){
       ${state.gdriveConnected
         ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGdrive()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGdrive()">🔄 ファイル更新</button>`
         :`<button class="btn btn-primary btn-sm" onclick="doConnectGdrive()">📁 Driveと連携する</button>`}
+    </div>
+  </div>
+  <div class="int-card">
+    <div class="int-card-header">
+      <div class="int-icon" style="background:#f0e8fb">🎨</div>
+      <div>
+        <div class="int-title">カレンダー表示設定</div>
+        <div style="font-size:12px;color:var(--text3)">デフォルトの色・表示設定</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:12px;color:var(--text2)">デフォルト色</span>
+      <input type="color" value="${state.calDefaultColor||'#3b7dd8'}" onchange="state.calDefaultColor=this.value;save();" style="width:36px;height:28px;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:0">
+      <span style="font-size:11px;color:var(--text3)">企業カラー未設定時に使用</span>
+    </div>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:12px;color:var(--text2)">GCalイベント色</span>
+      <input type="color" value="${state.calGcalColor||'#4285f4'}" onchange="state.calGcalColor=this.value;save();" style="width:36px;height:28px;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:0">
+      <span style="font-size:11px;color:var(--text3)">Googleカレンダーのイベント表示色</span>
     </div>
   </div>
   <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">閉じる</button></div>`;
