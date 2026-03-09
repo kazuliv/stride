@@ -271,18 +271,7 @@ input,textarea,select{font-family:inherit;outline:none}
 .home-doc-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:all .12s;text-decoration:none;color:var(--text)}
 .home-doc-row:last-child{border-bottom:none}
 .home-doc-row:hover{background:var(--surface2);margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:var(--radius-sm)}
-.home-keep-input-wrap{display:flex;gap:8px;margin-bottom:10px}
-.home-keep-input{flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--surface2);color:var(--text);transition:border-color .12s}
-.home-keep-input:focus{border-color:var(--accent);background:var(--surface)}
-.home-keep-note{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
-.home-keep-note:last-child{border-bottom:none}
-.home-integration-tile{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:all .12s;position:relative}
-.home-integration-tile:hover{background:var(--surface2);border-color:var(--border2)}
 .home-int-icon{font-size:20px;flex-shrink:0}
-.home-int-badge{font-size:11px;font-weight:600;padding:1px 6px;border-radius:10px}
-.home-int-badge.red{background:#fdf0ee;color:var(--red)}
-.home-int-count{position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:10px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center}
-.home-int-count.blue{background:var(--accent)}
 
 /* ===== KANBAN ===== */
 .kanban-wrap{display:flex;gap:14px;height:100%;overflow-x:auto;overflow-y:hidden;padding-bottom:8px;align-items:flex-start}
@@ -430,10 +419,6 @@ input,textarea,select{font-family:inherit;outline:none}
 .toggle-pill.on{background:var(--accent)}
 .toggle-pill::after{content:'';position:absolute;width:12px;height:12px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .toggle-pill.on::after{left:17px}
-.gchat-toggle{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:all .12s;margin-top:6px}
-.gchat-toggle:hover{border-color:var(--accent3);background:#edfbf4}
-.gchat-toggle.on{border-color:var(--accent3);background:#edfbf4}
-.toggle-pill.gchat-on{background:var(--accent3)}
 .detail-save-btn{width:100%;margin-top:12px}
 .progress-wrap{margin-top:6px}
 .progress-track{height:6px;background:var(--bg2);border-radius:3px;overflow:hidden}
@@ -471,8 +456,6 @@ textarea.form-input{resize:vertical;min-height:72px}
 .int-desc{font-size:12.5px;color:var(--text2);line-height:1.5}
 .int-actions{display:flex;gap:6px;margin-top:10px}
 
-/* ===== GOOGLE CHAT PANEL ===== */
-.gchat-preview{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:12.5px;color:var(--text2);line-height:1.6;font-family:monospace}
 
 /* ===== TOAST ===== */
 .toast-container{position:fixed;bottom:20px;right:20px;z-index:300;display:flex;flex-direction:column;gap:6px;pointer-events:none}
@@ -565,10 +548,6 @@ textarea.form-input{resize:vertical;min-height:72px}
       <div class="int-dot" id="gdrive-dot"></div>
       <span class="int-label" style="color:var(--text2)">Drive</span>
     </div>
-    <div class="integration-badge" onclick="openModal('integrations')" title="Google Chat">
-      <div class="int-dot" id="gchat-dot"></div>
-      <span class="int-label" style="color:var(--text2)">Chat</span>
-    </div>
   </div>
 </aside>
 
@@ -619,8 +598,6 @@ let state = {
   inbox: [],       // GTD inbox: [{id, text, created, note}]
   delegated: [],   // Delegated tasks: [{id, text, delegateTo, checkDate, memo, done, created}]
   gcalConnected: false,
-  gchatConnected: false,
-  gchatWebhook: '',
   kanban: {
     groupBy: 'status', // 'status' | 'company' | 'project'
     columns: null, // null = auto from groupBy
@@ -779,7 +756,6 @@ function generateRecurringTasks(){
               note:t.note||'',
               gdocUrl:t.gdocUrl||'',
               gcal:t.gcal,
-              gchat:t.gchat,
               todos:t.todos?t.todos.map(td=>({id:uid(),text:td.text,done:false,actionDate:nextDate,actionStartTime:td.actionStartTime||'',actionEndTime:td.actionEndTime||''})):[],
               created:Date.now(),
               recurrenceParentId:t.id,
@@ -824,27 +800,26 @@ function seedDemo(){
   state.companies=[
     {id:c1,name:'株式会社アクセル',color:'#e85d3a',projects:[
       {id:p1,name:'Webリニューアル',status:'doing',startDate:addDays(today(),-10),dueDate:addDays(today(),30),tasks:[
-        {id:uid(),title:'要件定義ドキュメント作成',priority:'high',status:'done',startDate:addDays(today(),-10),dueDate:addDays(today(),-3),actionDate:'',gcal:false,gchat:false,gdocUrl:'',note:'クライアントと合意済み',todos:[{id:uid(),text:'ヒアリングシート送付',done:true,actionDate:''},{id:uid(),text:'要件まとめ',done:true,actionDate:''}]},
-        {id:uid(),title:'デザインカンプ作成',priority:'high',status:'doing',startDate:addDays(today(),-2),dueDate:addDays(today(),5),actionDate:today(),gcal:false,gchat:false,gdocUrl:'https://docs.google.com/document/d/example1',note:'',todos:[{id:uid(),text:'TOPページ',done:true,actionDate:''},{id:uid(),text:'下層ページ',done:false,actionDate:today()},{id:uid(),text:'SP対応',done:false,actionDate:''}]},
-        {id:uid(),title:'フロントエンド実装',priority:'med',status:'todo',startDate:addDays(today(),6),dueDate:addDays(today(),20),actionDate:'',gcal:false,gchat:false,gdocUrl:'',note:'',todos:[{id:uid(),text:'HTML/CSS構築',done:false,actionDate:''},{id:uid(),text:'JS実装',done:false,actionDate:''},{id:uid(),text:'レスポンシブ対応',done:false,actionDate:''}]},
+        {id:uid(),title:'要件定義ドキュメント作成',priority:'high',status:'done',startDate:addDays(today(),-10),dueDate:addDays(today(),-3),actionDate:'',gcal:false,gdocUrl:'',note:'クライアントと合意済み',todos:[{id:uid(),text:'ヒアリングシート送付',done:true,actionDate:''},{id:uid(),text:'要件まとめ',done:true,actionDate:''}]},
+        {id:uid(),title:'デザインカンプ作成',priority:'high',status:'doing',startDate:addDays(today(),-2),dueDate:addDays(today(),5),actionDate:today(),gcal:false,gdocUrl:'https://docs.google.com/document/d/example1',note:'',todos:[{id:uid(),text:'TOPページ',done:true,actionDate:''},{id:uid(),text:'下層ページ',done:false,actionDate:today()},{id:uid(),text:'SP対応',done:false,actionDate:''}]},
+        {id:uid(),title:'フロントエンド実装',priority:'med',status:'todo',startDate:addDays(today(),6),dueDate:addDays(today(),20),actionDate:'',gcal:false,gdocUrl:'',note:'',todos:[{id:uid(),text:'HTML/CSS構築',done:false,actionDate:''},{id:uid(),text:'JS実装',done:false,actionDate:''},{id:uid(),text:'レスポンシブ対応',done:false,actionDate:''}]},
       ]},
       {id:p2,name:'SEO改善施策',status:'todo',startDate:addDays(today(),5),dueDate:addDays(today(),45),tasks:[
-        {id:uid(),title:'現状分析レポート',priority:'med',status:'todo',startDate:addDays(today(),5),dueDate:addDays(today(),10),actionDate:'',gcal:false,gchat:false,gdocUrl:'',note:'',todos:[{id:uid(),text:'GA4データ確認',done:false,actionDate:''},{id:uid(),text:'SearchConsole分析',done:false,actionDate:''}]},
-        {id:uid(),title:'キーワード調査',priority:'low',status:'todo',startDate:addDays(today(),10),dueDate:addDays(today(),20),actionDate:'',gcal:false,gchat:false,gdocUrl:'',note:'',todos:[]},
+        {id:uid(),title:'現状分析レポート',priority:'med',status:'todo',startDate:addDays(today(),5),dueDate:addDays(today(),10),actionDate:'',gcal:false,gdocUrl:'',note:'',todos:[{id:uid(),text:'GA4データ確認',done:false,actionDate:''},{id:uid(),text:'SearchConsole分析',done:false,actionDate:''}]},
+        {id:uid(),title:'キーワード調査',priority:'low',status:'todo',startDate:addDays(today(),10),dueDate:addDays(today(),20),actionDate:'',gcal:false,gdocUrl:'',note:'',todos:[]},
       ]},
     ]},
     {id:c2,name:'グローバル商事',color:'#7c4ddb',projects:[
       {id:p3,name:'在庫管理システム導入',status:'doing',startDate:addDays(today(),-5),dueDate:addDays(today(),25),tasks:[
-        {id:uid(),title:'現行システムのヒアリング',priority:'high',status:'done',startDate:addDays(today(),-5),dueDate:addDays(today(),-1),actionDate:'',gcal:false,gchat:false,gdocUrl:'',note:'',todos:[{id:uid(),text:'担当者ヒアリング',done:true,actionDate:''},{id:uid(),text:'フロー図作成',done:true,actionDate:''}]},
-        {id:uid(),title:'要件定義書作成',priority:'high',status:'doing',startDate:today(),dueDate:addDays(today(),7),actionDate:today(),gcal:false,gchat:false,gdocUrl:'',note:'',todos:[{id:uid(),text:'機能要件',done:true,actionDate:''},{id:uid(),text:'非機能要件',done:false,actionDate:today()},{id:uid(),text:'WF作成',done:false,actionDate:''}]},
-        {id:uid(),title:'開発環境構築',priority:'med',status:'todo',startDate:addDays(today(),8),dueDate:addDays(today(),15),actionDate:'',gcal:false,gchat:false,gdocUrl:'',note:'',todos:[]},
+        {id:uid(),title:'現行システムのヒアリング',priority:'high',status:'done',startDate:addDays(today(),-5),dueDate:addDays(today(),-1),actionDate:'',gcal:false,gdocUrl:'',note:'',todos:[{id:uid(),text:'担当者ヒアリング',done:true,actionDate:''},{id:uid(),text:'フロー図作成',done:true,actionDate:''}]},
+        {id:uid(),title:'要件定義書作成',priority:'high',status:'doing',startDate:today(),dueDate:addDays(today(),7),actionDate:today(),gcal:false,gdocUrl:'',note:'',todos:[{id:uid(),text:'機能要件',done:true,actionDate:''},{id:uid(),text:'非機能要件',done:false,actionDate:today()},{id:uid(),text:'WF作成',done:false,actionDate:''}]},
+        {id:uid(),title:'開発環境構築',priority:'med',status:'todo',startDate:addDays(today(),8),dueDate:addDays(today(),15),actionDate:'',gcal:false,gdocUrl:'',note:'',todos:[]},
       ]},
       {id:p4,name:'月次レポート自動化',status:'todo',startDate:addDays(today(),10),dueDate:addDays(today(),40),tasks:[
-        {id:uid(),title:'データソース整理',priority:'low',status:'todo',startDate:addDays(today(),10),dueDate:addDays(today(),20),actionDate:'',gcal:false,gchat:false,gdocUrl:'',note:'',todos:[]},
+        {id:uid(),title:'データソース整理',priority:'low',status:'todo',startDate:addDays(today(),10),dueDate:addDays(today(),20),actionDate:'',gcal:false,gdocUrl:'',note:'',todos:[]},
       ]},
     ]},
   ];
-  state.keepNotes=[];
   state.pinnedDocs=[];
   save();
 }
@@ -1286,10 +1261,7 @@ function renderHome(c){
   const gdocs=all.filter(t=>t.gdocUrl).map(t=>({url:t.gdocUrl,title:t.title,color:t.companyColor}));
   const pinnedDocs=state.pinnedDocs||[];
   const gcalOk=state.gcalConnected;
-  const gchatOk=state.gchatConnected;
-  const gmailOk=state.gmailConnected||false;
   const gdriveOk=state.gdriveConnected||false;
-  const gkeepOk=state.gkeepConnected||false;
 
   function chip(cls,val,label,oc){
     return '<div class="home-stat-chip '+cls+'"'+(oc?' onclick="'+oc+'"':'')+'>'+
@@ -1437,49 +1409,6 @@ function renderHome(c){
     '</div>'+
   '</div>';
 
-  // ── Row 4: 未読・メンション (left) + Google Keep (right) ──
-  // Keep rows
-  let kr='';
-  (state.keepNotes||[]).slice(0,6).forEach(function(n,i){
-    kr+='<div class="home-keep-note"><span style="flex:1;font-size:12.5px">'+esc(n.text)+'</span>'+
-      '<span style="font-size:10px;color:var(--text3)">'+(n.time||'')+'</span>'+
-      '<button class="btn-icon" onclick="deleteKeepNote('+i+')" style="font-size:11px;color:var(--text3)">✕</button></div>';
-  });
-
-  h+='<div class="home-row-2col">'+
-    // 未読・メンション (left)
-    '<div class="home-card">'+
-      '<div class="home-card-header"><div class="home-card-title">💬 未読・メンション</div></div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
-        '<div class="home-integration-tile" onclick="openModal(\'integrations\')"><div class="home-int-icon">✉️</div>'+
-          '<div><div style="font-size:12px;font-weight:600">Gmail</div>'+
-            (gmailOk?'<div class="home-int-badge red">未読 '+(state.gmailUnread||'—')+'</div>':
-                     '<div style="font-size:11px;color:var(--text3)">未連携</div>')+
-          '</div>'+(gmailOk&&state.gmailUnread?'<div class="home-int-count red">'+state.gmailUnread+'</div>':'')+
-        '</div>'+
-        '<div class="home-integration-tile" onclick="openModal(\'integrations\')"><div class="home-int-icon">💬</div>'+
-          '<div><div style="font-size:12px;font-weight:600">Google Chat</div>'+
-            (gchatOk?'<div style="font-size:11px;color:var(--text3)">メンション: <b style="color:var(--accent)">'+(state.gchatMentions||0)+'</b></div>':
-                     '<div style="font-size:11px;color:var(--text3)">未連携</div>')+
-          '</div>'+(gchatOk&&state.gchatMentions?'<div class="home-int-count blue">'+state.gchatMentions+'</div>':'')+
-        '</div>'+
-      '</div>'+
-      '<div style="font-size:11px;color:var(--text3);line-height:1.6">💡 Google APIと連携することで未読数・メンション数を自動取得できます。</div>'+
-      '<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px" onclick="openModal(\'integrations\')">⚙ 連携設定</button>'+
-    '</div>'+
-    // Google Keep (right)
-    '<div class="home-card">'+
-      '<div class="home-card-header"><div class="home-card-title">📝 Google Keep メモ</div>'+
-        (gkeepOk?'<span style="font-size:10px;background:#edfbf4;color:var(--green);padding:2px 6px;border-radius:10px">連携中</span>':'')+
-      '</div>'+
-      '<div class="home-keep-input-wrap">'+
-        '<input class="home-keep-input" id="keepInput" placeholder="メモを入力... (Enterで保存)" onkeydown="if(event.key===\'Enter\')saveKeepNote()">'+
-        '<button class="btn btn-primary btn-sm" onclick="saveKeepNote()">追加</button>'+
-      '</div>'+
-      '<div id="keepNotes">'+kr+'</div>'+
-      (!gkeepOk?'<div style="margin-top:6px;font-size:11px;color:var(--text3)">※ Google Keep API連携後、Keepに同期されます。</div>':'')+
-    '</div>'+
-  '</div>';
 
   h+='</div>';// close home-layout
   c.innerHTML=h;
@@ -1491,28 +1420,6 @@ function renderHome(c){
 
 
 // Home helper functions
-function saveKeepNote(){
-  const inp=document.getElementById('keepInput');
-  const text=inp?inp.value.trim():'';if(!text)return;
-  if(!state.keepNotes)state.keepNotes=[];
-  const now=new Date();
-  const timeStr=(now.getMonth()+1)+'/'+now.getDate()+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  state.keepNotes.unshift({id:uid(),text,time:timeStr});
-  inp.value='';save();
-  const box=document.getElementById('keepNotes');
-  if(box) box.innerHTML=(state.keepNotes||[]).slice(0,5).map(function(n,i){
-    return '<div class="home-keep-note"><span style="flex:1;font-size:12.5px">'+esc(n.text)+'</span>'+
-      '<span style="font-size:10px;color:var(--text3)">'+(n.time||'')+'</span>'+
-      '<button class="btn-icon" onclick="deleteKeepNote('+i+')" style="font-size:11px;color:var(--text3)">✕</button></div>';
-  }).join('');
-  showToast('メモを追加しました');
-  if(state.gkeepConnected)showToast('Google Keepにも同期しました');
-}
-function deleteKeepNote(i){
-  if(!state.keepNotes)return;
-  state.keepNotes.splice(i,1);save();
-  if(ui.view==='home')renderContent();
-}
 function openPinDocModal(){
   const url=prompt('ピン留めするGoogle Docs/Drive のURLを入力:','https://docs.google.com/');
   if(!url||!url.startsWith('http'))return;
@@ -1837,7 +1744,7 @@ function doInboxClassify(inboxId){
     actionDate:document.getElementById('ic-action')?.value||'',
     actionStartTime:'',actionEndTime:'',
     note:item.note||'',
-    gcal:false,gcalMode:'',gchat:false,
+    gcal:false,gcalMode:'',
     gdocUrl:'',
     todos:[],
     created:Date.now(),
@@ -2228,7 +2135,6 @@ function taskItemHTML(t, inProjectList=false){
         ${t.dueDate?`<span class="tag tag-due ${dc}">📅 ${fmtDate(t.dueDate)}</span>`:''}
         ${t.recurrence?.enabled?'<span class="tag" style="background:#f0e8fb;color:#7c4ddb;font-weight:600">🔄 定期</span>':''}
         ${t.gcal?`<span class="tag tag-gcal">📅 ${{action:'アクション',due:'締切',both:'両方'}[t.gcalMode]||'GCal'}</span>`:''}
-        ${t.gchat?'<span class="tag" style="background:#e8f8f0;color:#1a8a50">💬 GChat</span>':''}
         ${(t.actionLogs?.length)?`<span class="tag" style="background:#e8f0fb;color:var(--accent)">📋 ${calcTotalWorkTime(t).replace('合計: ','')}</span>`:''}
       </div>
       ${pct!==null?`<div class="progress-wrap"><div class="progress-track" style="margin-top:6px"><div class="progress-fill" style="width:${pct}%"></div></div></div>`:''}
@@ -2244,7 +2150,6 @@ function cycleStatus(id){
   const cycle={todo:'doing',doing:'done',done:'todo'};
   const newStatus=cycle[r.task.status];
   updateTask(id,{status:newStatus});
-  if(newStatus==='done'&&r.task.gchat&&state.gchatConnected)sendGchatNotification(`✅ タスク完了: "${r.task.title}" (${r.company.name} / ${r.project.name})`);
   renderAll();
   if(ui.selectedTaskId===id)renderDetail(id);
 }
@@ -2491,13 +2396,6 @@ function renderDetail(id){
       </select>
       <div style="font-size:10px;color:var(--text3);margin-top:4px">${t.gcalMode==='action'?'★ アクション日のイベントとして登録中':t.gcalMode==='due'?'📅 締切日のイベントとして登録中':t.gcalMode==='both'?'★ アクション日 + 📅 締切日の両方で登録中':t.gcal&&!t.gcalMode?'★ アクション日のイベントとして登録中（旧形式）':'選択するとカレンダーに反映されます'}</div>
       ${(state.gcalCalendars||[]).length>0?'<div style="margin-top:8px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">登録先カレンダー</div><select class="detail-input" style="font-size:12px;padding:6px 8px" onchange="setTaskGcalCal(\''+id+'\',this.value)">'+(state.gcalCalendars||[]).map(function(c){return'<option value="'+esc(c.id)+'"'+(((t.gcalCalId||'')===(c.id))||(!(t.gcalCalId)&&c.primary)?' selected':'')+'>'+esc(c.summary)+(c.primary?' (デフォルト)':'')+'</option>';}).join('')+'</select></div>':''}
-    </div>
-    <div class="gchat-toggle ${t.gchat?'on':''}" onclick="toggleTaskGchat('${id}')">
-      <div class="toggle-pill ${t.gchat?'gchat-on':''}"></div>
-      <div>
-        <div style="font-size:13px;font-weight:500">💬 Google Chat通知</div>
-        <div style="font-size:11px;color:var(--text3)">${t.gchat?'ステータス変更時に通知':'通知する'}</div>
-      </div>
     </div>
   </div>
 
@@ -2843,14 +2741,6 @@ async function syncGcalByMode(task,company,project){
     showToast('カレンダー登録に失敗しました','error');
   }
 }
-function toggleTaskGchat(id){
-  const r=getTask(id);if(!r)return;
-  if(!state.gchatConnected){showToast('先にGoogle Chatを連携してください','error');openModal('integrations');return}
-  const newVal=!r.task.gchat;
-  updateTask(id,{gchat:newVal});
-  if(newVal)sendGchatNotification(`📌 タスク通知設定: "${r.task.title}" の更新をGoogle Chatに通知します`);
-  renderDetail(id);renderContent();
-}
 
 function closeDetail(){
   document.getElementById('detailPanel').classList.add('hidden');
@@ -2958,7 +2848,6 @@ function kanbanCardHTML(t){
       ${gb!=='status'?`<span class="tag tag-status-${t.status}" style="font-size:10px;padding:1px 6px">${{todo:'○ 未着手',doing:'◑ 進行中',done:'● 完了'}[t.status]}</span>`:''}
       ${t.dueDate?`<span class="tag tag-due ${dc}" style="font-size:10px;padding:1px 6px">📅 ${fmtDate(t.dueDate)}</span>`:''}
       ${t.gcal?'<span class="tag tag-gcal" style="font-size:10px;padding:1px 6px">📅</span>':''}
-      ${t.gchat?'<span class="tag" style="background:#e8f8f0;color:#1a8a50;font-size:10px;padding:1px 6px">💬</span>':''}
     </div>
     ${pct!==null?`<div class="kanban-card-progress">
       <div class="progress-track" style="height:4px"><div class="progress-fill" style="width:${pct}%"></div></div>
@@ -3089,9 +2978,6 @@ function applyKanbanMove(taskId, targetColKey){
   if(gb==='status'){
     const prevStatus=task.status;
     updateTask(taskId,{status:targetColKey});
-    if(targetColKey==='done'&&task.gchat&&state.gchatConnected){
-      sendGchatNotification(`✅ タスク完了: "${task.title}" (${company.name} / ${project.name})`);
-    }
     if(prevStatus!==targetColKey)showToast(`「${task.title}」を「${{todo:'未着手',doing:'進行中',done:'完了'}[targetColKey]}」に移動`);
   } else if(gb==='company'){
     // Move task to the first project of target company
@@ -3380,7 +3266,6 @@ function buildModal(type,...args){
   if(type==='addTask')return buildAddTask(args[0],args[1],args[2]);
   if(type==='editTask')return buildEditTask(args[0]);
   if(type==='integrations')return buildIntegrations();
-  if(type==='gchatSetup')return buildGchatSetup();
   if(type==='kanbanSettings')return buildKanbanSettings();
   if(type==='csvExport')return buildCsvExport();
   if(type==='recurrence')return buildRecurrenceModal(args[0]);
@@ -3600,10 +3485,6 @@ function buildAddTask(cid,pid,defaultStatus='todo'){
       </select>
     </div>
     ${(state.gcalCalendars||[]).length>0?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:12px;color:var(--text2);white-space:nowrap">登録先</span><select class="form-input form-select" id="m-tgcalcal" style="flex:1;font-size:12px;padding:6px 8px">'+(state.gcalCalendars||[]).map(function(c){return'<option value="'+esc(c.id)+'"'+(c.primary?' selected':'')+'>'+esc(c.summary)+(c.primary?' (デフォルト)':'')+'</option>';}).join('')+'</select></div>':''}
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-      <input type="checkbox" id="m-tgchat" ${state.gchatConnected?'checked':''} style="accent-color:var(--accent3)">
-      <span>💬 Google Chatに追加通知を送る</span>
-    </label>
   </div>
   <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button><button class="btn btn-primary" onclick="doAddTask()">追加</button></div>`;
 }
@@ -3629,7 +3510,6 @@ function doAddTask(){
   if(!p)return;
   const gcalMode=document.getElementById('m-tgcalmode')?.value||'';
   const gcalCalId=document.getElementById('m-tgcalcal')?.value||'';
-  const gchat=document.getElementById('m-tgchat').checked;
   const t={
     id:uid(),title,
     priority:document.getElementById('m-tpri').value,
@@ -3641,7 +3521,6 @@ function doAddTask(){
     gcal:!!gcalMode&&state.gcalConnected,
     gcalMode:gcalMode,
     gcalCalId:gcalCalId,
-    gchat:gchat&&state.gchatConnected,
     gdocUrl:document.getElementById('m-tgdoc')?.value?.trim()||'',
     todos:[],
     created:Date.now(),
@@ -3658,7 +3537,6 @@ function doAddTask(){
   p.tasks.push(t);save();
   if(t.gcal&&t.gcalMode){syncGcalByMode(t,c,p);}
   else if(t.gcal)createGcalEvent(t,c,p);
-  if(t.gchat)sendGchatNotification(`📌 新規タスク: *${t.title}*\n企業: ${c.name} / プロジェクト: ${p.name}\n締切: ${t.dueDate||'未設定'}\n優先度: ${{high:'🔴高',med:'🟡中',low:'🟢低'}[t.priority]}`);
   closeModal();renderAll();
   selectTask(t.id);
   showToast(`「${title}」を追加しました`);
@@ -3848,30 +3726,6 @@ function buildIntegrations(){
         ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGdrive()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGdrive()">🔄 ファイル更新</button>`
         :`<button class="btn btn-primary btn-sm" onclick="doConnectGdrive()">📁 Driveと連携する</button>`}
     </div>
-  </div>
-  <div class="int-card ${state.gchatConnected?'connected':''}">
-    <div class="int-card-header">
-      <div class="int-icon" style="background:#e8f8f0">💬</div>
-      <div>
-        <div class="int-title">Google Chat</div>
-        <div style="font-size:12px;color:var(--text3)">Webhook URLで通知送信</div>
-      </div>
-      <div class="int-status ${state.gchatConnected?'ok':'no'}">${state.gchatConnected?'✓ 連携中':'未連携'}</div>
-    </div>
-    <div class="int-desc">Incoming Webhook URLを設定すると、タスク追加・ステータス変更・締め切りリマインドをGoogle Chatスペースに通知します。</div>
-    ${state.gchatConnected?`
-    <div style="margin-top:8px">
-      <div class="gchat-preview">接続済み Webhook: ${state.gchatWebhook.slice(0,40)}...</div>
-    </div>`:``}
-    <div class="int-actions">
-      ${state.gchatConnected
-        ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGchat()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent3)" onclick="doTestGchat()">💬 テスト送信</button>`
-        :`<button class="btn btn-primary btn-sm" style="background:var(--accent3)" onclick="openModal('gchatSetup')">💬 Webhookを設定する</button>`}
-    </div>
-  </div>
-  <div style="margin-top:8px;padding:12px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12px;color:var(--text3);line-height:1.6">
-    💡 <b>Google Chat Webhookの取得方法:</b><br>
-    スペース → 設定 → Webhook → 「Incoming Webhookを追加」→ URLをコピー
   </div>
   <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">閉じる</button></div>`;
 }
@@ -4064,40 +3918,6 @@ async function doRefreshGdrive(){
   }
 }
 
-function buildGchatSetup(){
-  return`<div class="modal-title">Google Chat Webhook設定<span class="modal-close" onclick="closeModal()">✕</span></div>
-  <div class="form-group">
-    <label class="form-label">Webhook URL</label>
-    <input class="form-input" id="m-webhook" placeholder="https://chat.googleapis.com/v1/spaces/..." value="${state.gchatWebhook||''}">
-    <div style="font-size:12px;color:var(--text3);margin-top:6px">Google Chatスペースの「Webhook」設定からURLを取得してください</div>
-  </div>
-  <div class="form-group">
-    <label class="form-label">通知するイベント</label>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="notif-new" checked style="accent-color:var(--accent3)"> タスク新規追加</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="notif-status" checked style="accent-color:var(--accent3)"> ステータス変更</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="notif-remind" checked style="accent-color:var(--accent3)"> 締め切り前リマインド（1日前）</label>
-    </div>
-  </div>
-  <div style="padding:12px;background:#edfbf4;border:1px solid #b6ecd0;border-radius:var(--radius-sm);font-size:12.5px;color:#1a8a50;margin-bottom:14px">
-    🔒 Webhook URLはブラウザのローカルストレージに保存されます。<br>実際の通知はサーバーサイド実装が必要です（デモではブラウザコンソールに出力）。
-  </div>
-  <div class="modal-actions">
-    <button class="btn btn-ghost btn-sm" onclick="openModal('integrations')">戻る</button>
-    <button class="btn btn-ghost btn-sm" onclick="doTestGchat()">テスト送信</button>
-    <button class="btn btn-primary" style="background:var(--accent3)" onclick="doSaveGchat()">保存</button>
-  </div>`;
-}
-function doSaveGchat(){
-  const url=document.getElementById('m-webhook')?.value.trim();
-  if(!url||!url.startsWith('https://chat.googleapis.com')){showToast('有効なWebhook URLを入力してください','error');return}
-  state.gchatWebhook=url;state.gchatConnected=true;
-  save();updateIntDots();closeModal();showToast('Google Chatと連携しました','success');renderAll();
-}
-function doDisconnectGchat(){state.gchatConnected=false;state.gchatWebhook='';save();updateIntDots();closeModal();showToast('Google Chatの連携を解除しました');renderAll()}
-function doTestGchat(){
-  sendGchatNotification('👋 Strideからテスト通知です！連携が正常に動作しています。');
-}
 
 // ============================================================
 // INTEGRATIONS LOGIC — Google Calendar API
@@ -4349,22 +4169,10 @@ async function updateGcalEvent(task,company,project){
   }
 }
 
-function sendGchatNotification(text){
-  if(!state.gchatConnected&&!window._gchatDemo)return;
-  const payload={text};
-  console.log('[GChat]',payload);
-  // Real implementation would POST to state.gchatWebhook:
-  // fetch(state.gchatWebhook, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
-  showToast('💬 Google Chatに通知しました','info');
-  if(state.gchatWebhook){
-    fetch(state.gchatWebhook,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
-  }
-}
 
 function updateIntDots(){
   document.getElementById('gcal-dot').className='int-dot '+(state.gcalConnected?'connected':'disconnected');
   document.getElementById('gdrive-dot').className='int-dot '+(state.gdriveConnected?'connected':'disconnected');
-  document.getElementById('gchat-dot').className='int-dot '+(state.gchatConnected?'connected':'disconnected');
 }
 
 // ============================================================
@@ -4384,14 +4192,7 @@ function openEditTask(id){
 // ============================================================
 // REMINDER CHECK (simplified — runs on load and every minute)
 // ============================================================
-function checkReminders(){
-  if(!state.gchatConnected)return;
-  const tomorrow=addDays(today(),1);
-  getAllTasks().filter(t=>t.gchat&&t.dueDate===tomorrow&&t.status!=='done').forEach(t=>{
-    const r=getTask(t.id);
-    if(r)sendGchatNotification(`⏰ 明日が締切: *${t.title}*\n${r.company.name} / ${r.project.name}`);
-  });
-}
+function checkReminders(){}
 
 // ============================================================
 // TOAST
