@@ -1630,7 +1630,7 @@ function taskItemHTML(t, inProjectList=false){
         <span class="tag tag-status-${t.status}" style="font-size:11px">${{todo:'○ 未着手',doing:'◑ 進行中',done:'● 完了'}[t.status]}</span>
         ${t.dueDate?`<span class="tag tag-due ${dc}">📅 ${fmtDate(t.dueDate)}</span>`:''}
         ${t.recurrence?.enabled?'<span class="tag" style="background:#f0e8fb;color:#7c4ddb;font-weight:600">🔄 定期</span>':''}
-        ${t.gcal?'<span class="tag tag-gcal">📅 GCal</span>':''}
+        ${t.gcal?`<span class="tag tag-gcal">📅 ${{action:'アクション',due:'締切',both:'両方'}[t.gcalMode]||'GCal'}</span>`:''}
         ${t.gchat?'<span class="tag" style="background:#e8f8f0;color:#1a8a50">💬 GChat</span>':''}
       </div>
       ${pct!==null?`<div class="progress-wrap"><div class="progress-track" style="margin-top:6px"><div class="progress-fill" style="width:${pct}%"></div></div></div>`:''}
@@ -1875,12 +1875,15 @@ function renderDetail(id){
 
   <div class="detail-section">
     <div class="detail-label">連携</div>
-    <div class="gcal-toggle ${t.gcal?'on':''}" onclick="toggleTaskGcal('${id}')">
-      <div class="toggle-pill ${t.gcal?'on':''}"></div>
-      <div>
-        <div style="font-size:13px;font-weight:500">📅 Googleカレンダー</div>
-        <div style="font-size:11px;color:var(--text3)">${t.gcal?'期間イベントとして登録済み':'登録する'}</div>
-      </div>
+    <div style="padding:10px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:8px">
+      <div style="font-size:13px;font-weight:500;margin-bottom:8px">📅 Googleカレンダー</div>
+      <select class="detail-input" style="font-size:12px;padding:6px 8px" onchange="setTaskGcalMode('${id}',this.value)">
+        <option value="" ${!t.gcalMode&&!t.gcal?'selected':''}>登録しない</option>
+        <option value="action" ${t.gcalMode==='action'||(t.gcal&&!t.gcalMode)?'selected':''}>アクション日で登録</option>
+        <option value="due" ${t.gcalMode==='due'?'selected':''}>締切日で登録</option>
+        <option value="both" ${t.gcalMode==='both'?'selected':''}>両方で登録</option>
+      </select>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">${t.gcalMode==='action'?'★ アクション日のイベントとして登録中':t.gcalMode==='due'?'📅 締切日のイベントとして登録中':t.gcalMode==='both'?'★ アクション日 + 📅 締切日の両方で登録中':t.gcal&&!t.gcalMode?'★ アクション日のイベントとして登録中（旧形式）':'選択するとカレンダーに反映されます'}</div>
     </div>
     <div class="gchat-toggle ${t.gchat?'on':''}" onclick="toggleTaskGchat('${id}')">
       <div class="toggle-pill ${t.gchat?'gchat-on':''}"></div>
@@ -1998,7 +2001,11 @@ function saveDetailField(id,field,value){
   // Trigger GCal update if dates/times changed
   if(r&&r.task.gcal&&state.gcalConnected&&_gcalAccessToken&&
     (field==='startDate'||field==='dueDate'||field==='actionDate'||field==='actionStartTime'||field==='actionEndTime')){
-    updateGcalEvent(r.task,r.company,r.project);
+    if(r.task.gcalMode){
+      syncGcalByMode(r.task,r.company,r.project);
+    }else{
+      updateGcalEvent(r.task,r.company,r.project);
+    }
   }
 }
 
@@ -2033,6 +2040,65 @@ function toggleTaskGcal(id){
     showToast('Googleカレンダーから削除しました');
   }
   renderDetail(id);renderContent();
+}
+function setTaskGcalMode(id,mode){
+  const r=getTask(id);if(!r)return;
+  if(mode&&!state.gcalConnected){showToast('先にGoogleカレンダーを連携してください','error');openModal('integrations');return}
+  updateTask(id,{gcal:!!mode,gcalMode:mode||''});
+  if(mode&&state.gcalConnected&&_gcalAccessToken){
+    syncGcalByMode(r.task,r.company,r.project);
+  }else if(!mode){
+    showToast('Googleカレンダーの登録を解除しました');
+  }
+  renderDetail(id);renderContent();
+}
+async function syncGcalByMode(task,company,project){
+  const mode=task.gcalMode||'action';
+  const calId=encodeURIComponent(state.gcalCalendarId||'primary');
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Delete old events if they exist
+  if(task.gcalEventId){
+    try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventId,{method:'DELETE'});}catch(e){}
+  }
+  if(task.gcalEventIdDue){
+    try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventIdDue,{method:'DELETE'});}catch(e){}
+  }
+  const updates={gcalEventId:'',gcalEventIdDue:''};
+  try{
+    // Action date event
+    if((mode==='action'||mode==='both')&&task.actionDate){
+      const ev={summary:'★ ['+company.name+'] '+task.title,description:project.name+': '+(task.note||'')};
+      if(task.actionStartTime&&task.actionEndTime){
+        ev.start={dateTime:task.actionDate+'T'+task.actionStartTime+':00',timeZone:tz};
+        ev.end={dateTime:task.actionDate+'T'+task.actionEndTime+':00',timeZone:tz};
+      }else if(task.actionStartTime){
+        const endT=task.actionStartTime.split(':');const eH=parseInt(endT[0])+1;
+        ev.start={dateTime:task.actionDate+'T'+task.actionStartTime+':00',timeZone:tz};
+        ev.end={dateTime:task.actionDate+'T'+String(eH).padStart(2,'0')+':'+endT[1]+':00',timeZone:tz};
+      }else{
+        ev.start={date:task.actionDate};ev.end={date:addDays(task.actionDate,1)};
+      }
+      if(task.recurrence?.enabled){const rrule=buildRecurrenceGcalRrule(task.recurrence);if(rrule)ev.recurrence=[rrule];}
+      const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
+      updates.gcalEventId=created.id;
+    }
+    // Due date event
+    if((mode==='due'||mode==='both')&&(task.dueDate||task.startDate)){
+      const ev={summary:'📅 ['+company.name+'] '+task.title,description:project.name+': '+(task.note||'')};
+      ev.start=task.startDate?{date:task.startDate}:{date:task.dueDate};
+      ev.end=task.dueDate?{date:addDays(task.dueDate,1)}:{date:addDays(task.startDate,1)};
+      if(task.recurrence?.enabled){const rrule=buildRecurrenceGcalRrule(task.recurrence);if(rrule)ev.recurrence=[rrule];}
+      const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
+      updates.gcalEventIdDue=created.id;
+    }
+    updateTask(task.id,updates);
+    showToast('📅 Googleカレンダーに登録しました');
+    await fetchGcalEvents();
+    if(ui.view==='home')renderContent();
+  }catch(e){
+    console.error('GCal sync failed:',e);
+    showToast('カレンダー登録に失敗しました','error');
+  }
 }
 function toggleTaskGchat(id){
   const r=getTask(id);if(!r)return;
@@ -2779,10 +2845,15 @@ function buildAddTask(cid,pid,defaultStatus='todo'){
   </div>
   <div class="integration-section">
     <div class="integration-section-title">🔗 連携設定</div>
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
-      <input type="checkbox" id="m-tgcal" ${state.gcalConnected?'checked':''} style="accent-color:var(--accent)">
-      <span>📅 Googleカレンダーに期間イベントとして登録</span>
-    </label>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="font-size:13px">📅 Googleカレンダー</span>
+      <select class="form-input form-select" id="m-tgcalmode" style="flex:1;font-size:12px;padding:6px 8px">
+        <option value="">登録しない</option>
+        <option value="action" ${state.gcalConnected?'selected':''}>アクション日で登録</option>
+        <option value="due">締切日で登録</option>
+        <option value="both">両方で登録</option>
+      </select>
+    </div>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" id="m-tgchat" ${state.gchatConnected?'checked':''} style="accent-color:var(--accent3)">
       <span>💬 Google Chatに追加通知を送る</span>
@@ -2810,7 +2881,7 @@ function doAddTask(){
   const pid=document.getElementById('m-tpid').value;
   const c=getCompany(cid);const p=c?.projects.find(x=>x.id===pid);
   if(!p)return;
-  const gcal=document.getElementById('m-tgcal').checked;
+  const gcalMode=document.getElementById('m-tgcalmode')?.value||'';
   const gchat=document.getElementById('m-tgchat').checked;
   const t={
     id:uid(),title,
@@ -2820,7 +2891,8 @@ function doAddTask(){
     dueDate:document.getElementById('m-tdue').value,
     actionDate:document.getElementById('m-taction')?.value||'',
     note:document.getElementById('m-tnote').value,
-    gcal:gcal&&state.gcalConnected,
+    gcal:!!gcalMode&&state.gcalConnected,
+    gcalMode:gcalMode,
     gchat:gchat&&state.gchatConnected,
     gdocUrl:document.getElementById('m-tgdoc')?.value?.trim()||'',
     todos:[],
@@ -2836,7 +2908,7 @@ function doAddTask(){
     t.recurrence=rec;
   }
   p.tasks.push(t);save();
-  if(t.gcal&&t.recurrence){createGcalRecurringEvent(t,c,p);}
+  if(t.gcal&&t.gcalMode){syncGcalByMode(t,c,p);}
   else if(t.gcal)createGcalEvent(t,c,p);
   if(t.gchat)sendGchatNotification(`📌 新規タスク: *${t.title}*\n企業: ${c.name} / プロジェクト: ${p.name}\n締切: ${t.dueDate||'未設定'}\n優先度: ${{high:'🔴高',med:'🟡中',low:'🟢低'}[t.priority]}`);
   closeModal();renderAll();
