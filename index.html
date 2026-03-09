@@ -341,6 +341,34 @@ input,textarea,select{font-family:inherit;outline:none}
 .tl-bar{position:absolute;top:50%;transform:translateY(-50%);height:20px;border-radius:5px;display:flex;align-items:center;padding:0 7px;font-size:11px;font-weight:600;color:#fff;cursor:pointer;transition:filter .12s;z-index:2;white-space:nowrap;overflow:hidden}
 .tl-bar:hover{filter:brightness(.87)}
 
+/* ===== INBOX & DELEGATED ===== */
+.inbox-input-wrap{display:flex;gap:8px;margin-bottom:16px}
+.inbox-input{flex:1;padding:12px 14px;border:2px solid var(--accent-light);border-radius:var(--radius);font-size:14px;background:var(--surface);color:var(--text);transition:border-color .15s}
+.inbox-input:focus{border-color:var(--accent);outline:none}
+.inbox-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:4px;background:var(--surface);transition:box-shadow .12s}
+.inbox-item:hover{box-shadow:var(--shadow)}
+.inbox-item-text{flex:1;font-size:13.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inbox-item-date{font-size:10px;color:var(--text3);white-space:nowrap}
+.inbox-actions{display:flex;gap:4px;flex-shrink:0}
+.inbox-action-btn{padding:4px 10px;border-radius:4px;font-size:11px;font-weight:500;cursor:pointer;transition:all .12s;border:1px solid var(--border);background:var(--surface)}
+.inbox-action-btn:hover{background:var(--surface2)}
+.inbox-action-btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.inbox-action-btn.primary:hover{background:#2e6abf}
+.inbox-action-btn.danger{color:var(--red);border-color:var(--red)}
+.inbox-action-btn.danger:hover{background:#fef0f0}
+.deleg-item{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;background:var(--surface)}
+.deleg-item.done{opacity:.5}
+.deleg-item-body{flex:1;min-width:0}
+.deleg-item-title{font-size:13.5px;font-weight:500;margin-bottom:2px}
+.deleg-item-meta{font-size:11px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap}
+.quick-inbox-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding-top:20vh}
+.quick-inbox-modal{background:var(--surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:480px;max-width:90vw;padding:20px;animation:qiSlide .2s ease}
+@keyframes qiSlide{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+.quick-inbox-title{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text2);display:flex;align-items:center;gap:6px}
+.quick-inbox-input{width:100%;padding:12px 14px;border:2px solid var(--accent-light);border-radius:var(--radius);font-size:14px;background:var(--surface);color:var(--text)}
+.quick-inbox-input:focus{border-color:var(--accent);outline:none}
+.quick-inbox-added{font-size:12px;color:var(--accent3);padding:4px 0;display:flex;align-items:center;gap:4px}
+
 /* ===== CALENDAR PLAN ===== */
 .calplan-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
 .calplan-top{overflow:hidden;flex-shrink:0;position:relative}
@@ -485,6 +513,10 @@ textarea.form-input{resize:vertical;min-height:72px}
       <span style="flex:1">ダッシュボード</span>
       <span class="nav-chevron" id="dashboard-chevron">›</span>
     </div>
+    <div class="nav-row" id="nav-inbox" onclick="navTo('inbox',null,null,null,this)" style="background:var(--accent-light)">
+      <span class="nav-icon">📥</span><span class="nav-label" style="font-weight:600">Inbox</span>
+      <span class="nav-badge" id="badge-inbox" style="background:var(--accent);color:#fff;display:none">0</span>
+    </div>
     <div class="nav-row" id="nav-home" onclick="navTo('home',null,null,null,this)">
       <span class="nav-icon">🏠</span><span class="nav-label" style="font-weight:600">ホーム</span>
     </div>
@@ -498,6 +530,10 @@ textarea.form-input{resize:vertical;min-height:72px}
     </div>
     <div class="nav-row" id="nav-calplan" onclick="navTo('calplan',null,null,null,this)">
       <span class="nav-icon">📅</span><span class="nav-label">カレンダー計画</span>
+    </div>
+    <div class="nav-row" id="nav-delegated" onclick="navTo('delegated',null,null,null,this)">
+      <span class="nav-icon">📤</span><span class="nav-label">委任済み</span>
+      <span class="nav-badge" id="badge-delegated" style="display:none">0</span>
     </div>
     <div id="dashboard-extra" style="display:none">
       <div class="nav-row" id="nav-overdue" onclick="navTo('overdue',null,null,null,this)">
@@ -578,6 +614,8 @@ textarea.form-input{resize:vertical;min-height:72px}
 // ============================================================
 let state = {
   companies: [],
+  inbox: [],       // GTD inbox: [{id, text, created, note}]
+  delegated: [],   // Delegated tasks: [{id, text, delegateTo, checkDate, memo, done, created}]
   gcalConnected: false,
   gchatConnected: false,
   gchatWebhook: '',
@@ -901,7 +939,9 @@ function renderBreadcrumb(){
   const addTaskBtn=document.getElementById('addTaskBtn');
   const viewTabs=document.getElementById('viewTabs');
   let parts=[];
-  if(ui.view==='home')parts=[{label:'🏠 ホーム'}];
+  if(ui.view==='inbox')parts=[{label:'📥 Inbox'}];
+  else if(ui.view==='delegated')parts=[{label:'📤 委任済み'}];
+  else if(ui.view==='home')parts=[{label:'🏠 ホーム'}];
   else if(ui.view==='all')parts=[{label:'すべてのタスク'}];
   else if(ui.view==='today')parts=[{label:'☀️ 今日のアクション'}];
   else if(ui.view==='calplan')parts=[{label:'📅 カレンダー計画'}];
@@ -915,7 +955,7 @@ function renderBreadcrumb(){
   addTaskBtn.style.display=showAdd?'':'none';
   const showTabs=['project','company','all','today','overdue','kanban_nav'].includes(ui.view);
   viewTabs.style.display=showTabs?'':'none';
-  if(ui.view==='timeline'||ui.view==='home'||ui.view==='calplan') viewTabs.style.display='none';
+  if(ui.view==='timeline'||ui.view==='home'||ui.view==='calplan'||ui.view==='inbox'||ui.view==='delegated') viewTabs.style.display='none';
   document.querySelectorAll('.view-tab').forEach(t=>t.classList.remove('active'));
   const activeTab=document.getElementById('tab-'+ui.contentView);
   if(activeTab)activeTab.classList.add('active');
@@ -935,6 +975,17 @@ function updateBadges(){
   const ov=all.filter(t=>t.dueDate&&t.dueDate<todayStr&&t.status!=='done');
   const ob=document.getElementById('badge-overdue');
   ob.textContent=ov.length;ob.style.display=ov.length?'':'none';
+  // Inbox badge
+  const ib=document.getElementById('badge-inbox');
+  const inboxCount=(state.inbox||[]).length;
+  if(ib){ib.textContent=inboxCount;ib.style.display=inboxCount?'':'none';}
+  // Delegated badge
+  const db=document.getElementById('badge-delegated');
+  const delCount=(state.delegated||[]).filter(d=>!d.done).length;
+  if(db){db.textContent=delCount;db.style.display=delCount?'':'none';}
+  // Include delegated check items in today count
+  const todayDelegated=(state.delegated||[]).filter(d=>!d.done&&d.checkDate&&d.checkDate<=todayStr);
+  document.getElementById('badge-today').textContent=todayActions.length+todayTodos.length+todayDelegated.length;
 }
 
 // ===== CONTENT =====
@@ -942,6 +993,8 @@ function renderContent(){
   const c=document.getElementById('content');
   c.className='content';
   c.style.padding='';c.style.display='';c.style.flexDirection='';c.style.overflow='';
+  if(ui.view==='inbox'){renderInbox(c);return}
+  if(ui.view==='delegated'){renderDelegated(c);return}
   if(ui.view==='home'){renderHome(c);return}
   if(ui.view==='calplan'){renderCalendarPlan(c);return}
   if(ui.view==='timeline'||ui.contentView==='timeline'){renderTimeline(c);return}
@@ -1157,11 +1210,30 @@ function renderTodayActionView(c,allT,todayStr){
     todosHTML='<div style="padding:14px;text-align:center;color:var(--text3);font-size:13px">今日のアクションTodoはありません</div>';
   }
 
+  // Delegated items due for check today
+  const todayDelegated=(state.delegated||[]).filter(d=>!d.done&&d.checkDate&&d.checkDate<=todayStr);
+  let delegHTML='';
+  if(todayDelegated.length){
+    delegHTML=todayDelegated.map(d=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:4px;background:var(--surface)">
+      <span style="font-size:14px">📤</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;color:var(--text)">${esc(d.text)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">👤 ${esc(d.delegateTo)} ${d.checkDate<todayStr?'<span style="color:var(--red);font-weight:600">確認期限超過</span>':'確認日'}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="delegatedDone('${d.id}');renderContent()">確認済み</button>
+    </div>`).join('');
+  }
+
   c.innerHTML=`
   <div style="margin-bottom:16px">
     <div style="font-size:13px;color:var(--text3);margin-bottom:4px">${dateLabel}</div>
     <div style="font-size:20px;font-weight:700;color:var(--text)">☀️ 今日のアクション</div>
   </div>
+  ${todayDelegated.length?`<div style="margin-bottom:16px">
+    <div class="section-header"><span class="section-title">📤 委任確認</span><span class="section-count">${todayDelegated.length}件</span></div>
+    ${delegHTML}
+  </div>`:''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
     <div>
       <div class="section-header"><span class="section-title">📋 タスク</span><span class="section-count">${actionTasks.length}件</span><span class="section-add" onclick="openAddTask(null,null,'doing')">＋ 追加</span></div>
@@ -1638,6 +1710,303 @@ function setHomeWeekDay(dateStr){
     </div>`).join('')}
   </div>`;
 }
+
+// ===== INBOX =====
+function renderInbox(container){
+  if(!state.inbox) state.inbox=[];
+  let h='<div style="max-width:700px;margin:0 auto;padding:20px">';
+  h+='<div style="margin-bottom:16px"><div style="font-size:20px;font-weight:700">📥 Inbox</div>';
+  h+='<div style="font-size:12px;color:var(--text3);margin-top:4px">まず書き出す、あとで仕分ける — <kbd style="background:var(--bg2);padding:1px 5px;border-radius:3px;font-size:10px">⌘⌃T×2</kbd> でどこからでも追加</div></div>';
+  h+='<div class="inbox-input-wrap">';
+  h+='<input class="inbox-input" id="inboxInput" placeholder="💭 頭の中のタスクを入力..." onkeydown="if(event.key===\'Enter\')inboxAdd()">';
+  h+='<button class="btn btn-primary" onclick="inboxAdd()">追加</button>';
+  h+='</div>';
+  if(!state.inbox.length){
+    h+='<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">Inboxは空です ✨<br><span style="font-size:11px">頭の中にあるタスクを書き出しましょう</span></div>';
+  } else {
+    for(const item of state.inbox){
+      const age=Math.round((Date.now()-item.created)/86400000);
+      h+='<div class="inbox-item">';
+      h+='<div class="inbox-item-text">'+esc(item.text)+'</div>';
+      h+='<div class="inbox-item-date">'+(age===0?'今日':age+'日前')+'</div>';
+      h+='<div class="inbox-actions">';
+      h+='<button class="inbox-action-btn primary" onclick="openInboxClassify(\''+item.id+'\')" title="プロジェクトに分類">📁 分類</button>';
+      h+='<button class="inbox-action-btn" onclick="openInboxDelegate(\''+item.id+'\')" title="委任する">📤 委任</button>';
+      h+='<button class="inbox-action-btn danger" onclick="inboxDelete(\''+item.id+'\')" title="削除">🗑</button>';
+      h+='</div>';
+      h+='</div>';
+    }
+  }
+  h+='</div>';
+  container.innerHTML=h;
+  setTimeout(()=>{const inp=document.getElementById('inboxInput');if(inp)inp.focus();},50);
+}
+
+function inboxAdd(text){
+  if(!state.inbox) state.inbox=[];
+  if(!text){
+    const inp=document.getElementById('inboxInput');
+    text=inp?.value.trim();
+    if(!text)return;
+    inp.value='';
+  }
+  state.inbox.push({id:uid(),text:text,created:Date.now(),note:''});
+  save();updateBadges();
+  if(ui.view==='inbox') renderContent();
+}
+
+function inboxDelete(id){
+  state.inbox=(state.inbox||[]).filter(x=>x.id!==id);
+  save();updateBadges();
+  if(ui.view==='inbox') renderContent();
+}
+
+function openInboxClassify(inboxId){
+  const item=(state.inbox||[]).find(x=>x.id===inboxId);
+  if(!item)return;
+  openModal('inboxClassify',inboxId);
+}
+
+function buildInboxClassify(inboxId){
+  const item=(state.inbox||[]).find(x=>x.id===inboxId);
+  if(!item)return '<div>アイテムが見つかりません</div>';
+  return '<div class="modal-title">📁 タスクを分類<span class="modal-close" onclick="closeModal()">✕</span></div>'+
+    '<div style="padding:10px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px;font-size:13px;font-weight:500">'+esc(item.text)+'</div>'+
+    '<div class="form-group"><label class="form-label">企業</label>'+
+    '<select class="form-input form-select" id="ic-cid" onchange="icRefreshProjects()">'+
+      state.companies.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('')+
+    '</select>'+
+    '<button class="btn btn-ghost btn-sm" style="margin-top:4px;font-size:11px" onclick="icNewCompany()">＋ 新しい企業を作成</button></div>'+
+    '<div class="form-group"><label class="form-label">プロジェクト</label>'+
+    '<select class="form-input form-select" id="ic-pid">'+
+      (state.companies[0]?.projects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('')+
+    '</select>'+
+    '<button class="btn btn-ghost btn-sm" style="margin-top:4px;font-size:11px" onclick="icNewProject()">＋ 新しいプロジェクトを作成</button></div>'+
+    '<div class="form-group"><label class="form-label">優先度</label>'+
+    '<select class="form-input form-select" id="ic-pri"><option value="med" selected>🟡 中</option><option value="high">🔴 高</option><option value="low">🟢 低</option></select></div>'+
+    '<div class="form-group"><label class="form-label">締切日（任意）</label><input class="form-input" type="date" id="ic-due"></div>'+
+    '<div class="form-group"><label class="form-label">アクション日（任意）</label><input class="form-input" type="date" id="ic-action"></div>'+
+    '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>'+
+    '<button class="btn btn-primary" onclick="doInboxClassify(\''+inboxId+'\')">分類して移動</button></div>';
+}
+
+function icRefreshProjects(){
+  const cid=document.getElementById('ic-cid')?.value;
+  const c=getCompany(cid);
+  const sel=document.getElementById('ic-pid');
+  if(sel) sel.innerHTML=(c?.projects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+}
+
+function icNewCompany(){
+  const name=prompt('新しい企業名を入力:');
+  if(!name||!name.trim())return;
+  const colors=['#3b7dd8','#e85d3a','#2a9e6e','#d4820e','#7c4ddb','#0e9ec4','#e85d9a'];
+  const nc={id:uid(),name:name.trim(),color:colors[state.companies.length%colors.length],projects:[]};
+  state.companies.push(nc);save();
+  const sel=document.getElementById('ic-cid');
+  if(sel){sel.innerHTML=state.companies.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');sel.value=nc.id;icRefreshProjects();}
+}
+
+function icNewProject(){
+  const name=prompt('新しいプロジェクト名を入力:');
+  if(!name||!name.trim())return;
+  const cid=document.getElementById('ic-cid')?.value;
+  const c=getCompany(cid);if(!c)return;
+  const np={id:uid(),name:name.trim(),status:'active',tasks:[],startDate:'',dueDate:'',note:'',gdocUrl:''};
+  c.projects.push(np);save();
+  icRefreshProjects();
+  const sel=document.getElementById('ic-pid');
+  if(sel) sel.value=np.id;
+}
+
+function doInboxClassify(inboxId){
+  const item=(state.inbox||[]).find(x=>x.id===inboxId);
+  if(!item)return;
+  const cid=document.getElementById('ic-cid')?.value;
+  const pid=document.getElementById('ic-pid')?.value;
+  const c=getCompany(cid);const p=c?.projects.find(x=>x.id===pid);
+  if(!p){showToast('企業またはプロジェクトを選択してください','error');return;}
+  const t={
+    id:uid(),title:item.text,
+    priority:document.getElementById('ic-pri')?.value||'med',
+    status:'todo',
+    startDate:'',
+    dueDate:document.getElementById('ic-due')?.value||'',
+    actionDate:document.getElementById('ic-action')?.value||'',
+    actionStartTime:'',actionEndTime:'',
+    note:item.note||'',
+    gcal:false,gcalMode:'',gchat:false,
+    gdocUrl:'',
+    todos:[],
+    created:Date.now(),
+  };
+  p.tasks.push(t);
+  state.inbox=state.inbox.filter(x=>x.id!==inboxId);
+  save();closeModal();updateBadges();renderAll();
+  showToast('📁 「'+esc(item.text)+'」を '+esc(c.name)+' / '+esc(p.name)+' に分類しました');
+}
+
+function openInboxDelegate(inboxId){
+  const item=(state.inbox||[]).find(x=>x.id===inboxId);
+  if(!item)return;
+  openModal('inboxDelegate',inboxId);
+}
+
+function buildInboxDelegate(inboxId){
+  const item=(state.inbox||[]).find(x=>x.id===inboxId);
+  if(!item)return '<div>アイテムが見つかりません</div>';
+  return '<div class="modal-title">📤 タスクを委任<span class="modal-close" onclick="closeModal()">✕</span></div>'+
+    '<div style="padding:10px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px;font-size:13px;font-weight:500">'+esc(item.text)+'</div>'+
+    '<div class="form-group"><label class="form-label">委任先</label><input class="form-input" id="id-to" placeholder="例: 田中さん"></div>'+
+    '<div class="form-group"><label class="form-label">確認日</label><input class="form-input" type="date" id="id-check" value="'+addDays(today(),7)+'"></div>'+
+    '<div class="form-group"><label class="form-label">メモ（任意）</label><input class="form-input" id="id-memo" placeholder="補足情報..."></div>'+
+    '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>'+
+    '<button class="btn btn-primary" onclick="doInboxDelegate(\''+inboxId+'\')">委任する</button></div>';
+}
+
+function doInboxDelegate(inboxId){
+  const item=(state.inbox||[]).find(x=>x.id===inboxId);
+  if(!item)return;
+  const to=document.getElementById('id-to')?.value.trim();
+  if(!to){showToast('委任先を入力してください','error');return;}
+  if(!state.delegated) state.delegated=[];
+  state.delegated.push({
+    id:uid(),
+    text:item.text,
+    delegateTo:to,
+    checkDate:document.getElementById('id-check')?.value||'',
+    memo:document.getElementById('id-memo')?.value.trim()||'',
+    done:false,
+    created:Date.now(),
+  });
+  state.inbox=state.inbox.filter(x=>x.id!==inboxId);
+  save();closeModal();updateBadges();renderAll();
+  showToast('📤 「'+esc(item.text)+'」を '+esc(to)+' に委任しました');
+}
+
+// ===== DELEGATED LIST =====
+function renderDelegated(container){
+  if(!state.delegated) state.delegated=[];
+  const todayStr=today();
+  const active=state.delegated.filter(d=>!d.done);
+  const done=state.delegated.filter(d=>d.done);
+  let h='<div style="max-width:700px;margin:0 auto;padding:20px">';
+  h+='<div style="margin-bottom:16px"><div style="font-size:20px;font-weight:700">📤 委任済みタスク</div>';
+  h+='<div style="font-size:12px;color:var(--text3);margin-top:4px">他の人に委任したタスク。確認日になると「今日のアクション」に表示されます。</div></div>';
+  if(!active.length&&!done.length){
+    h+='<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">委任済みタスクはありません</div>';
+  } else {
+    for(const d of active){
+      const overdue=d.checkDate&&d.checkDate<=todayStr;
+      h+='<div class="deleg-item">';
+      h+='<div class="deleg-item-body">';
+      h+='<div class="deleg-item-title">'+esc(d.text)+'</div>';
+      h+='<div class="deleg-item-meta">';
+      h+='<span>👤 '+esc(d.delegateTo)+'</span>';
+      h+='<span style="'+(overdue?'color:var(--red);font-weight:600':'')+'">'+(d.checkDate?'📅 確認: '+fmtDate(d.checkDate):'確認日未設定')+'</span>';
+      if(d.memo) h+='<span>💬 '+esc(d.memo)+'</span>';
+      h+='</div></div>';
+      h+='<div style="display:flex;gap:4px;flex-shrink:0;align-items:center">';
+      h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="delegatedSetCheckDate(\''+d.id+'\')" title="確認日を変更">📅</button>';
+      h+='<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="delegatedDone(\''+d.id+'\')">確認済み</button>';
+      h+='<button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--red)" onclick="delegatedDelete(\''+d.id+'\')" title="削除">🗑</button>';
+      h+='</div></div>';
+    }
+    if(done.length){
+      h+='<div style="margin-top:16px;font-size:12px;color:var(--text3);font-weight:600;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">✓ 確認済み ('+done.length+') ▾</div>';
+      h+='<div style="display:none;margin-top:4px">';
+      for(const d of done){
+        h+='<div class="deleg-item done">';
+        h+='<div class="deleg-item-body">';
+        h+='<div class="deleg-item-title" style="text-decoration:line-through">'+esc(d.text)+'</div>';
+        h+='<div class="deleg-item-meta"><span>👤 '+esc(d.delegateTo)+'</span></div>';
+        h+='</div>';
+        h+='<button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--red)" onclick="delegatedDelete(\''+d.id+'\')">🗑</button>';
+        h+='</div>';
+      }
+      h+='</div>';
+    }
+  }
+  h+='</div>';
+  container.innerHTML=h;
+}
+
+function delegatedDone(id){
+  const d=(state.delegated||[]).find(x=>x.id===id);
+  if(d) d.done=true;
+  save();updateBadges();
+  if(ui.view==='delegated') renderContent();
+}
+
+function delegatedDelete(id){
+  state.delegated=(state.delegated||[]).filter(x=>x.id!==id);
+  save();updateBadges();
+  if(ui.view==='delegated') renderContent();
+}
+
+function delegatedSetCheckDate(id){
+  const d=(state.delegated||[]).find(x=>x.id===id);
+  if(!d)return;
+  const newDate=prompt('確認日を入力 (YYYY-MM-DD):',d.checkDate||today());
+  if(newDate===null)return;
+  d.checkDate=newDate;
+  save();updateBadges();
+  if(ui.view==='delegated') renderContent();
+}
+
+// ===== QUICK INBOX (Cmd+Ctrl+T×2) =====
+let _quickInboxLastT=0;
+function initQuickInboxShortcut(){
+  document.addEventListener('keydown',function(e){
+    if(e.key==='t'&&e.metaKey&&e.ctrlKey&&!e.shiftKey){
+      e.preventDefault();
+      const now=Date.now();
+      if(now-_quickInboxLastT<500){
+        _quickInboxLastT=0;
+        openQuickInbox();
+      } else {
+        _quickInboxLastT=now;
+      }
+    }
+  });
+}
+
+function openQuickInbox(){
+  // Don't open if already open
+  if(document.getElementById('quickInboxOverlay'))return;
+  const overlay=document.createElement('div');
+  overlay.id='quickInboxOverlay';
+  overlay.className='quick-inbox-overlay';
+  overlay.onclick=function(e){if(e.target===overlay)closeQuickInbox();};
+  overlay.innerHTML='<div class="quick-inbox-modal">'+
+    '<div class="quick-inbox-title">📥 Quick Inbox <span style="font-size:10px;color:var(--text3);font-weight:400">Escで閉じる</span></div>'+
+    '<input class="quick-inbox-input" id="quickInboxInput" placeholder="💭 タスクを入力して Enter..." autofocus>'+
+    '<div id="quickInboxAdded" style="margin-top:8px;max-height:200px;overflow-y:auto"></div>'+
+  '</div>';
+  document.body.appendChild(overlay);
+  const inp=document.getElementById('quickInboxInput');
+  if(inp){
+    inp.focus();
+    inp.addEventListener('keydown',function(e){
+      if(e.key==='Enter'){
+        const text=inp.value.trim();
+        if(!text)return;
+        inboxAdd(text);
+        inp.value='';
+        const added=document.getElementById('quickInboxAdded');
+        if(added) added.innerHTML='<div class="quick-inbox-added">✓ '+esc(text)+'</div>'+added.innerHTML;
+      }
+      if(e.key==='Escape') closeQuickInbox();
+    });
+  }
+}
+
+function closeQuickInbox(){
+  const el=document.getElementById('quickInboxOverlay');
+  if(el) el.remove();
+}
+
+initQuickInboxShortcut();
 
 // ===== CALENDAR PLAN VIEW =====
 let _calplanFilter='all';
@@ -3013,6 +3382,8 @@ function buildModal(type,...args){
   if(type==='kanbanSettings')return buildKanbanSettings();
   if(type==='csvExport')return buildCsvExport();
   if(type==='recurrence')return buildRecurrenceModal(args[0]);
+  if(type==='inboxClassify')return buildInboxClassify(args[0]);
+  if(type==='inboxDelegate')return buildInboxDelegate(args[0]);
   return'';
 }
 
