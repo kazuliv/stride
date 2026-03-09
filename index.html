@@ -1238,17 +1238,7 @@ function renderHome(c){
   '</div>';
 
   // ── Row 1: 今週のスケジュール (full width) ──
-  var gcalEmbedSrc='';
-  if(gcalOk&&state.gcalEmailId){
-    var tz=encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
-    var srcP='src='+encodeURIComponent(state.gcalEmailId);
-    if(state.gcalCalendars&&state.gcalCalendars.length>0){
-      for(var ci=0;ci<state.gcalCalendars.length;ci++){
-        if(state.gcalCalendars[ci].id!==state.gcalEmailId) srcP+='&src='+encodeURIComponent(state.gcalCalendars[ci].id);
-      }
-    }
-    gcalEmbedSrc='https://calendar.google.com/calendar/embed?'+srcP+'&ctz='+tz+'&mode=WEEK&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=1&showCalendars=1&showTz=0';
-  }
+  var gcalEmbedSrc=gcalOk?buildGcalEmbedUrl():'';
   h+='<div class="home-layout">'+
     '<div class="home-row-full">'+
       '<div class="home-card" style="padding-bottom:10px">'+
@@ -1655,20 +1645,7 @@ let _calplanTopH=null;
 
 function renderCalendarPlan(container){
   const gcalOk=state.gcalConnected&&_gcalAccessToken;
-  var gcalEmbedSrc='';
-  if(gcalOk&&state.gcalEmailId){
-    var tz=encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
-    // Build embed with all connected calendars for proper colors
-    var srcParams='src='+encodeURIComponent(state.gcalEmailId);
-    if(state.gcalCalendars&&state.gcalCalendars.length>0){
-      for(var ci=0;ci<state.gcalCalendars.length;ci++){
-        if(state.gcalCalendars[ci].id!==state.gcalEmailId){
-          srcParams+='&src='+encodeURIComponent(state.gcalCalendars[ci].id);
-        }
-      }
-    }
-    gcalEmbedSrc='https://calendar.google.com/calendar/embed?'+srcParams+'&ctz='+tz+'&mode=WEEK&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=1&showCalendars=1&showTz=0';
-  }
+  var gcalEmbedSrc=gcalOk?buildGcalEmbedUrl():'';
   const topH=_calplanTopH||Math.round(window.innerHeight*0.45);
   container.style.padding='0';container.style.overflow='hidden';container.style.display='flex';container.style.flexDirection='column';
   let h='<div class="calplan-wrap">';
@@ -3757,11 +3734,28 @@ async function fetchGcalCalendars(){
   if(!_gcalAccessToken)return;
   try{
     const data=await gcalApiFetch('https://www.googleapis.com/calendar/v3/users/me/calendarList');
-    state.gcalCalendars=(data.items||[]).filter(c=>c.accessRole==='owner'||c.accessRole==='writer').map(c=>({id:c.id,summary:c.summary||c.id,primary:!!c.primary}));
+    state.gcalCalendars=(data.items||[]).filter(c=>c.accessRole==='owner'||c.accessRole==='writer').map(c=>({id:c.id,summary:c.summary||c.id,primary:!!c.primary,color:c.backgroundColor||''}));
     save();
   }catch(e){
     console.error('Failed to fetch calendar list:',e);
   }
+}
+
+function buildGcalEmbedUrl(){
+  if(!state.gcalEmailId)return '';
+  var tz=encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  var cals=state.gcalCalendars||[];
+  // Find primary calendar color
+  var primaryCal=cals.find(function(c){return c.id===state.gcalEmailId});
+  var params='src='+encodeURIComponent(state.gcalEmailId);
+  if(primaryCal&&primaryCal.color) params+='&color='+encodeURIComponent(primaryCal.color);
+  for(var i=0;i<cals.length;i++){
+    if(cals[i].id!==state.gcalEmailId){
+      params+='&src='+encodeURIComponent(cals[i].id);
+      if(cals[i].color) params+='&color='+encodeURIComponent(cals[i].color);
+    }
+  }
+  return 'https://calendar.google.com/calendar/embed?'+params+'&ctz='+tz+'&mode=WEEK&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=1&showCalendars=1&showTz=0';
 }
 
 function getTaskCalId(task){
