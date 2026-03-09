@@ -605,8 +605,9 @@ function load(){
 }
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
-function today(){return new Date().toISOString().slice(0,10)}
-function addDays(ds,n){const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
+function localDateStr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function today(){return localDateStr(new Date())}
+function addDays(ds,n){const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return localDateStr(d)}
 function fmtDate(ds){
   if(!ds)return'';
   const d=new Date(ds+'T00:00:00'),t=new Date(today()+'T00:00:00');
@@ -638,7 +639,7 @@ function getNextRecurrenceDate(rec, afterDate){
     if(d<=after){d.setMonth(d.getMonth()+1);d.setDate(rec.day);}
     // Handle months with fewer days (e.g., day=31 in Feb)
     if(d.getDate()!==rec.day){d.setDate(0);}// last day of prev month
-    return d.toISOString().slice(0,10);
+    return localDateStr(d);
   }
   if(rec.type==='monthly_weekday'){
     // Every month on Nth weekday (e.g., 2nd Tuesday)
@@ -657,7 +658,7 @@ function getNextRecurrenceDate(rec, afterDate){
     let d=new Date(after);
     d.setDate(d.getDate()+1);// start from next day
     for(let i=0;i<7;i++){
-      if(d.getDay()===rec.weekday)return d.toISOString().slice(0,10);
+      if(d.getDay()===rec.weekday)return localDateStr(d);
       d.setDate(d.getDate()+1);
     }
   }
@@ -674,7 +675,7 @@ function getNthWeekdayOfMonth(year,month,week,weekday){
   const lastDay=new Date(year,month+1,0).getDate();
   if(target>lastDay)return null;// 5th week doesn't exist
   const d=new Date(year,month,target);
-  return d.toISOString().slice(0,10);
+  return localDateStr(d);
 }
 
 function generateRecurringTasks(){
@@ -1171,7 +1172,7 @@ function renderHome(c){
   const mondayOffset=dayOfWeek===0?-6:1-dayOfWeek;
   for(let i=0;i<7;i++){
     const d=new Date(now);d.setDate(now.getDate()+mondayOffset+i);
-    const ds=d.toISOString().slice(0,10);
+    const ds=localDateStr(d);
     weekDays.push({date:ds,label:['日','月','火','水','木','金','土'][d.getDay()],num:d.getDate(),isToday:ds===todayStr,tasks:all.filter(t=>t.actionDate===ds||t.dueDate===ds)});
   }
   const gdocs=all.filter(t=>t.gdocUrl).map(t=>({url:t.gdocUrl,title:t.title,color:t.companyColor}));
@@ -3394,22 +3395,27 @@ async function fetchGcalEvents(){
   const timeMin=new Date(now);timeMin.setDate(timeMin.getDate()-7);
   const timeMax=new Date(now);timeMax.setDate(timeMax.getDate()+90);
   try{
-    const calId=encodeURIComponent(state.gcalCalendarId||'primary');
-    const baseUrl='https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events?'+
-      'timeMin='+timeMin.toISOString()+'&timeMax='+timeMax.toISOString()+
-      '&singleEvents=true&orderBy=startTime&maxResults=2500';
+    // Collect all calendar IDs to fetch (primary + any used by tasks)
+    const calIds=new Set([state.gcalCalendarId||'primary']);
+    for(const c of state.companies)for(const p of c.projects)for(const t of p.tasks){if(t.gcalCalId)calIds.add(t.gcalCalId);}
     var allItems=[];
-    var pageToken=null;
-    do{
-      var url=baseUrl+(pageToken?'&pageToken='+pageToken:'');
-      var data=await gcalApiFetch(url);
-      allItems=allItems.concat(data.items||[]);
-      pageToken=data.nextPageToken||null;
-      console.log('[GCal] Page fetched:',data.items?.length||0,'events, total so far:',allItems.length,pageToken?'(more pages)':'(done)');
-    }while(pageToken);
-    console.log('[GCal] Total:',allItems.length,'events, range:',timeMin.toISOString().slice(0,10),'~',timeMax.toISOString().slice(0,10));
+    for(const cid of calIds){
+      const calId=encodeURIComponent(cid);
+      const baseUrl='https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events?'+
+        'timeMin='+timeMin.toISOString()+'&timeMax='+timeMax.toISOString()+
+        '&singleEvents=true&orderBy=startTime&maxResults=2500';
+      var pageToken=null;
+      do{
+        var url=baseUrl+(pageToken?'&pageToken='+pageToken:'');
+        var data=await gcalApiFetch(url);
+        allItems=allItems.concat(data.items||[]);
+        pageToken=data.nextPageToken||null;
+      }while(pageToken);
+    }
+    console.log('[GCal] Total:',allItems.length,'events from',calIds.size,'calendar(s)');
+    const eventsById={};
     state.gcalEvents=allItems.map(function(e){
-      return{
+      const ev={
         id:e.id,
         summary:e.summary||'(無題)',
         start:e.start.dateTime||e.start.date,
@@ -3418,10 +3424,89 @@ async function fetchGcalEvents(){
         color:e.colorId||null,
         htmlLink:e.htmlLink,
       };
+      eventsById[e.id]=ev;
+      return ev;
     });
     save();
+    syncGcalChangesToStride(eventsById);
   }catch(e){
     console.error('Failed to fetch GCal events:',e);
+  }
+}
+
+function syncGcalChangesToStride(eventsById){
+  let changed=false;
+  for(const c of state.companies){
+    for(const p of c.projects){
+      for(const t of p.tasks){
+        // Check action date event (gcalEventId)
+        if(t.gcalEventId&&eventsById[t.gcalEventId]){
+          const ev=eventsById[t.gcalEventId];
+          const evDate=(ev.start||'').slice(0,10);
+          if(evDate&&t.actionDate&&evDate!==t.actionDate){
+            console.log('[GCal Sync] Task "'+t.title+'" action date: '+t.actionDate+' → '+evDate);
+            t.actionDate=evDate;
+            changed=true;
+          }
+          // Sync start time if dateTime event
+          if(ev.start&&ev.start.length>10){
+            const evStartTime=ev.start.slice(11,16);
+            if(evStartTime&&t.actionStartTime&&evStartTime!==t.actionStartTime){
+              t.actionStartTime=evStartTime;changed=true;
+            }
+          }
+          if(ev.end&&ev.end.length>10){
+            const evEndTime=ev.end.slice(11,16);
+            if(evEndTime&&t.actionEndTime&&evEndTime!==t.actionEndTime){
+              t.actionEndTime=evEndTime;changed=true;
+            }
+          }
+        }
+        // Check due date event (gcalEventIdDue)
+        if(t.gcalEventIdDue&&eventsById[t.gcalEventIdDue]){
+          const ev=eventsById[t.gcalEventIdDue];
+          const evStart=(ev.start||'').slice(0,10);
+          const evEnd=(ev.end||'').slice(0,10);
+          if(evStart&&t.startDate&&evStart!==t.startDate){
+            console.log('[GCal Sync] Task "'+t.title+'" start date: '+t.startDate+' → '+evStart);
+            t.startDate=evStart;changed=true;
+          }
+          if(evEnd){
+            const dueDate=addDays(evEnd,-1);// GCal end date is exclusive
+            if(t.dueDate&&dueDate!==t.dueDate){
+              console.log('[GCal Sync] Task "'+t.title+'" due date: '+t.dueDate+' → '+dueDate);
+              t.dueDate=dueDate;changed=true;
+            }
+          }
+        }
+        // Check todos with gcalEventId
+        if(t.todos){
+          for(const td of t.todos){
+            if(td.gcalEventId&&eventsById[td.gcalEventId]){
+              const ev=eventsById[td.gcalEventId];
+              const evDate=(ev.start||'').slice(0,10);
+              if(evDate&&td.actionDate&&evDate!==td.actionDate){
+                console.log('[GCal Sync] Todo "'+td.text+'" date: '+td.actionDate+' → '+evDate);
+                td.actionDate=evDate;changed=true;
+              }
+              if(ev.start&&ev.start.length>10){
+                const st=ev.start.slice(11,16);
+                if(st&&td.actionStartTime&&st!==td.actionStartTime){td.actionStartTime=st;changed=true;}
+              }
+              if(ev.end&&ev.end.length>10){
+                const et=ev.end.slice(11,16);
+                if(et&&td.actionEndTime&&et!==td.actionEndTime){td.actionEndTime=et;changed=true;}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  if(changed){
+    save();
+    showToast('📅 Googleカレンダーの変更をStrideに反映しました','info');
+    renderAll();
   }
 }
 
@@ -3566,7 +3651,7 @@ function openCsvExport(){
   setTimeout(()=>{
     const t=today();const m=new Date();m.setDate(m.getDate()-30);
     const f=document.getElementById('m-csv-from');const to=document.getElementById('m-csv-to');
-    if(f)f.value=m.toISOString().slice(0,10);if(to)to.value=t;
+    if(f)f.value=localDateStr(m);if(to)to.value=t;
     updateCsvPreview();
   },50);
 }
@@ -3602,7 +3687,7 @@ function updateCsvPreview(){
 function filterTasksForCsv(all,from,to,basis){
   if(!from&&!to)return all;
   return all.filter(t=>{
-    let d=basis==='created'?(t.created?new Date(t.created).toISOString().slice(0,10):''):(t[basis]||'');
+    let d=basis==='created'?(t.created?localDateStr(new Date(t.created)):''):(t[basis]||'');
     if(!d)return false;
     if(from&&d<from)return false;
     if(to&&d>to)return false;
@@ -3620,14 +3705,14 @@ function exportTasksCsv(from,to,basis){
   const rows=all.map(t=>{
     const todoTotal=(t.todos||[]).length;
     const todoDone=(t.todos||[]).filter(d=>d.done).length;
-    const startD=t.startDate||t.created?new Date(t.created||t.startDate).toISOString().slice(0,10):'';
+    const startD=t.startDate||(t.created?localDateStr(new Date(t.created)):'');
     const elapsed=startD?diffDays(startD,todayStr):'';
     const remaining=t.dueDate?diffDays(todayStr,t.dueDate):'';
     return [
       t.companyName,t.projectName,t.title,
       statusMap[t.status]||t.status,priMap[t.priority]||t.priority,
       t.startDate||'',t.dueDate||'',t.actionDate||'',
-      t.created?new Date(t.created).toISOString().slice(0,10):'',
+      t.created?localDateStr(new Date(t.created)):'',
       t.status==='done'?'完了':'未完了',
       elapsed,remaining,todoTotal,todoDone,
       todoTotal?Math.round(todoDone/todoTotal*100)+'%':'',
