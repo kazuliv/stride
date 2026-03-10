@@ -1517,11 +1517,11 @@ function doCalSlotSetAction(taskId,dateStr,startTime,endTime){
 function doCalSlotAddLog(taskId,dateStr,startTime,endTime){
   var r=getTask(taskId);if(!r)return;
   if(!r.task.actionLogs)r.task.actionLogs=[];
-  var log={id:uid(),date:dateStr,startTime:startTime,endTime:endTime};
+  var log={id:uid(),date:dateStr,startTime:startTime,endTime:endTime,gcalEventId:''};
   r.task.actionLogs.push(log);
   save();
   // Sync to GCal
-  syncActionLogToGcal(r,log);
+  if(state.gcalConnected) syncActionLogToGcal(r,log);
   closeModal();
   buildHomeWeekGrid();
   showToast('稼働ログを追加しました');
@@ -4033,27 +4033,13 @@ async function doConnectGcal(){
       if(btn){btn.textContent='連携を開始';btn.disabled=false;}
       return;
     }
+    // Mark that this is an initial connect (for post-auth setup)
+    _gcalIsInitialConnect=true;
     if(!_gcalTokenClient){
       _gcalTokenClient=google.accounts.oauth2.initTokenClient({
         client_id:GCAL_CLIENT_ID,
         scope:GCAL_SCOPES,
-        callback:async(tokenResponse)=>{
-          if(tokenResponse.error){
-            showToast('認証に失敗しました: '+tokenResponse.error,'error');
-            return;
-          }
-          _gcalAccessToken=tokenResponse.access_token;
-          state.gcalConnected=true;
-          // Fetch actual calendar ID (email) for embed
-          try{
-            const calInfo=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/primary');
-            if(calInfo&&calInfo.id) state.gcalEmailId=calInfo.id;
-          }catch(e){console.warn('Could not fetch calendar ID:',e);}
-          save();updateIntDots();closeModal();
-          showToast('Googleカレンダーと連携しました','success');
-          await Promise.all([fetchGcalEvents(),fetchGcalCalendars()]);
-          renderAll();
-        },
+        callback:gcalTokenCallback,
       });
     }
     _gcalTokenClient.requestAccessToken();
@@ -4241,30 +4227,52 @@ async function gcalApiFetch(url,options={},_isRetry){
   return resp.json();
 }
 
+var _gcalRefreshResolve=null;
 function gcalSilentRefresh(){
   return new Promise(function(resolve){
     if(!GCAL_CLIENT_ID||typeof google==='undefined'||!google.accounts){resolve(false);return;}
     try{
+      _gcalRefreshResolve=resolve;
       if(!_gcalTokenClient){
         _gcalTokenClient=google.accounts.oauth2.initTokenClient({
           client_id:GCAL_CLIENT_ID,
           scope:GCAL_SCOPES,
-          callback:function(tokenResponse){
-            if(tokenResponse.error){resolve(false);return;}
-            _gcalAccessToken=tokenResponse.access_token;
-            state.gcalConnected=true;save();updateIntDots();
-            console.log('[GCal] Token refreshed silently');
-            resolve(true);
-          },
+          callback:gcalTokenCallback,
         });
       }
       // Use prompt:'' for silent/consent-less refresh (if user already granted)
       _gcalTokenClient.requestAccessToken({prompt:''});
     }catch(e){
       console.warn('[GCal] Silent refresh failed:',e);
+      _gcalRefreshResolve=null;
       resolve(false);
     }
   });
+}
+var _gcalIsInitialConnect=false;
+async function gcalTokenCallback(tokenResponse){
+  if(tokenResponse.error){
+    console.warn('[GCal] Token callback error:',tokenResponse.error);
+    if(_gcalIsInitialConnect){showToast('認証に失敗しました: '+tokenResponse.error,'error');_gcalIsInitialConnect=false;}
+    if(_gcalRefreshResolve){_gcalRefreshResolve(false);_gcalRefreshResolve=null;}
+    return;
+  }
+  _gcalAccessToken=tokenResponse.access_token;
+  state.gcalConnected=true;save();updateIntDots();
+  console.log('[GCal] Token obtained/refreshed');
+  // Handle initial connect (fetch calendar info, events, etc.)
+  if(_gcalIsInitialConnect){
+    _gcalIsInitialConnect=false;
+    try{
+      const calInfo=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/primary');
+      if(calInfo&&calInfo.id) state.gcalEmailId=calInfo.id;
+    }catch(e){console.warn('Could not fetch calendar ID:',e);}
+    save();closeModal();
+    showToast('Googleカレンダーと連携しました','success');
+    await Promise.all([fetchGcalEvents(),fetchGcalCalendars()]);
+    renderAll();
+  }
+  if(_gcalRefreshResolve){_gcalRefreshResolve(true);_gcalRefreshResolve=null;}
 }
 
 async function fetchGcalEvents(){
