@@ -2512,7 +2512,11 @@ function renderDetail(id){
     <div class="detail-label">カレンダー表示色</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       <div style="width:24px;height:24px;border-radius:50%;background:${c.color};cursor:pointer;border:2px solid ${!t.calColor?'#333':'transparent'};opacity:${!t.calColor?1:0.5}" onclick="saveDetailField('${id}','calColor','');this.parentElement.querySelectorAll('div').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.5'});this.style.borderColor='#333';this.style.opacity='1'" title="企業カラー（デフォルト）"></div>
-      ${['#3b7dd8','#e85d3a','#2a9e6e','#d4820e','#7c4ddb','#0e9ec4','#e85d9a','#dc3545','#f5a623','#5d9e2a'].map(col=>`<div style="width:24px;height:24px;border-radius:50%;background:${col};cursor:pointer;border:2px solid ${t.calColor===col?'#333':'transparent'};opacity:${t.calColor===col?1:0.5}" onclick="saveDetailField('${id}','calColor','${col}');this.parentElement.querySelectorAll('div').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.5'});this.style.borderColor='#333';this.style.opacity='1'"></div>`).join('')}
+      ${[
+        '#3b7dd8','#1a5fb4','#0e9ec4','#26a69a','#2a9e6e','#5d9e2a',
+        '#8bc34a','#d4820e','#f5a623','#e85d3a','#e53935','#e85d9a',
+        '#ab47bc','#7c4ddb','#5c6bc0','#78909c','#8d6e63','#546e7a',
+      ].map(col=>`<div style="width:24px;height:24px;border-radius:50%;background:${col};cursor:pointer;border:2px solid ${t.calColor===col?'#333':'transparent'};opacity:${t.calColor===col?1:0.5}" onclick="saveDetailField('${id}','calColor','${col}');this.parentElement.querySelectorAll('div').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.5'});this.style.borderColor='#333';this.style.opacity='1'"></div>`).join('')}
     </div>
     <div style="font-size:10px;color:var(--text3);margin-top:4px">ホーム画面のカレンダーに表示される色</div>
   </div>
@@ -3492,7 +3496,15 @@ function buildAddCompany(){
   <div class="form-group"><label class="form-label">企業名</label><input class="form-input" id="m-cname" placeholder="例：株式会社〇〇"></div>
   <div class="form-group"><label class="form-label">カラー</label>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
-  ${['#3b7dd8','#e85d3a','#2a9e6e','#d4820e','#7c4ddb','#0e9ec4','#e85d9a','#5d9e2a'].map(col=>`<div style="width:28px;height:28px;border-radius:50%;background:${col};cursor:pointer;border:2px solid transparent;transition:border-color .12s" onclick="document.getElementById('m-ccolor').value='${col}';this.parentElement.querySelectorAll('div').forEach(d=>d.style.borderColor='transparent');this.style.borderColor='#333'"></div>`).join('')}
+  ${[
+    '#3b7dd8','#1a5fb4','#0e9ec4','#26a69a','#2a9e6e','#5d9e2a',
+    '#8bc34a','#d4820e','#f5a623','#e85d3a','#e53935','#e85d9a',
+    '#ab47bc','#7c4ddb','#5c6bc0','#78909c','#8d6e63','#546e7a',
+  ].map(col=>`<div style="width:28px;height:28px;border-radius:50%;background:${col};cursor:pointer;border:2px solid transparent;transition:border-color .12s" onclick="document.getElementById('m-ccolor').value='${col}';this.parentElement.querySelectorAll('div').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.7'});this.style.borderColor='#333';this.style.opacity='1';var cp=document.getElementById('m-ccolor-picker');if(cp)cp.value='${col}'"></div>`).join('')}
+  <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+    <input type="color" id="m-ccolor-picker" value="#3b7dd8" onchange="document.getElementById('m-ccolor').value=this.value;this.parentElement.parentElement.querySelectorAll('div[style*=border-radius]').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.7'})" style="width:28px;height:28px;border:1px solid var(--border);border-radius:50%;cursor:pointer;padding:0;background:none">
+    <span style="font-size:11px;color:var(--text3)">カスタム色</span>
+  </div>
   <input type="hidden" id="m-ccolor" value="#3b7dd8">
   </div></div>
   <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button><button class="btn btn-primary" onclick="doAddCompany()">追加</button></div>`;
@@ -3515,7 +3527,15 @@ function buildEditCompany(cid){
   <div class="form-group"><label class="form-label">企業名</label><input class="form-input" id="m-ecname" value="${esc(c.name)}"></div>
   <div class="form-group"><label class="form-label">カラー</label>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
-  ${['#3b7dd8','#e85d3a','#2a9e6e','#d4820e','#7c4ddb','#0e9ec4','#e85d9a','#5d9e2a'].map(col=>`<div style="width:28px;height:28px;border-radius:50%;background:${col};cursor:pointer;border:2px solid ${col===c.color?'#333':'transparent'};transition:border-color .12s" onclick="document.getElementById('m-eccolor').value='${col}';this.parentElement.querySelectorAll('div').forEach(d=>d.style.borderColor='transparent');this.style.borderColor='#333'"></div>`).join('')}
+  ${[
+    '#3b7dd8','#1a5fb4','#0e9ec4','#26a69a','#2a9e6e','#5d9e2a',
+    '#8bc34a','#d4820e','#f5a623','#e85d3a','#e53935','#e85d9a',
+    '#ab47bc','#7c4ddb','#5c6bc0','#78909c','#8d6e63','#546e7a',
+  ].map(col=>`<div style="width:28px;height:28px;border-radius:50%;background:${col};cursor:pointer;border:2px solid ${col===c.color?'#333':'transparent'};transition:border-color .12s" onclick="document.getElementById('m-eccolor').value='${col}';this.parentElement.querySelectorAll('div').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.7'});this.style.borderColor='#333';this.style.opacity='1';var cp=document.getElementById('m-eccolor-picker');if(cp)cp.value='${col}'"></div>`).join('')}
+  <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+    <input type="color" id="m-eccolor-picker" value="${c.color}" onchange="document.getElementById('m-eccolor').value=this.value;this.parentElement.parentElement.querySelectorAll('div[style*=border-radius]').forEach(d=>{d.style.borderColor='transparent';d.style.opacity='0.7'})" style="width:28px;height:28px;border:1px solid var(--border);border-radius:50%;cursor:pointer;padding:0;background:none">
+    <span style="font-size:11px;color:var(--text3)">カスタム色</span>
+  </div>
   <input type="hidden" id="m-eccolor" value="${c.color}">
   </div></div>
   <div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2)">
