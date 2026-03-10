@@ -1570,11 +1570,11 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
 
   // Tasks → timed events (main actionStartTime)
   all.forEach(function(t){
-    if(t.status==='done') return;
     var targetDate=t.actionDate&&viewDates.includes(t.actionDate)?t.actionDate:
                    t.dueDate&&viewDates.includes(t.dueDate)?t.dueDate:null;
     if(!targetDate) return;
     var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
+    var isDone=t.status==='done';
     if(t.actionStartTime){
       // Skip if an actionLog covers the same time (avoid duplicate)
       var hasMatchingLog=(t.actionLogs||[]).some(function(log){
@@ -1584,7 +1584,7 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
         var parts=t.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
         var eH=sH+1;
         if(t.actionEndTime){var ep=t.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
-        timedEvents[targetDate].push({id:t.id,title:t.title,color:tc,startH:sH,endH:eH});
+        timedEvents[targetDate].push({id:t.id,title:(isDone?'✓ ':'')+t.title,color:tc,startH:sH,endH:eH,isDone:isDone});
         tasksWithTimedEntry[t.id]=true;
       }
     }
@@ -1592,7 +1592,6 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
 
   // Action logs → timed events (semi-transparent)
   all.forEach(function(t){
-    if(t.status==='done') return;
     var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
     (t.actionLogs||[]).forEach(function(log){
       if(!log.date||!log.startTime||!log.endTime||!viewDates.includes(log.date)) return;
@@ -1606,18 +1605,17 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
 
   // Tasks → all-day events (ONLY if not already shown as timed event)
   all.forEach(function(t){
-    if(t.status==='done') return;
     if(tasksWithTimedEntry[t.id]) return; // already shown as timed block
     var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
+    var isDone=t.status==='done';
     if(t.actionDate&&allDayEvents[t.actionDate])
-      allDayEvents[t.actionDate].push({id:t.id,title:t.title,color:tc,isAction:true});
+      allDayEvents[t.actionDate].push({id:t.id,title:(isDone?'✓ ':'')+t.title,color:tc,isAction:true,isDone:isDone});
     else if(t.dueDate&&allDayEvents[t.dueDate]&&t.actionDate!==t.dueDate)
-      allDayEvents[t.dueDate].push({id:t.id,title:t.title,color:tc,isDue:true});
+      allDayEvents[t.dueDate].push({id:t.id,title:(isDone?'✓ ':'')+t.title,color:tc,isDue:true,isDone:isDone});
   });
 
   // Todos → timed events
   all.forEach(function(t){
-    if(t.status==='done') return;
     (t.todos||[]).forEach(function(td){
       if(!td.actionDate||td.done||!td.actionStartTime||!viewDates.includes(td.actionDate)) return;
       var parts=td.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
@@ -1712,7 +1710,7 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
       '<div class="gcal-day-num'+(d.isToday?' today':'')+'" onclick="calClickDay(\''+d.date+'\')">'+d.num+'</div>'+
       (allDayEvents[d.date]||[]).slice(0,_calViewMode==='day'?6:2).map(function(e){
         var onclick=e.isGcal&&e.htmlLink?'window.open(\''+e.htmlLink.replace(/'/g,"\\'")+'\',\'_blank\')':'selectTask(\''+e.id+'\')';
-        return '<div style="background:'+e.color+';border-radius:3px;padding:1px 5px;margin:2px 2px 0;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-weight:600" onclick="event.stopPropagation();'+onclick+'" title="'+e.title.replace(/"/g,'&quot;')+'">'+
+        return '<div style="background:'+e.color+';border-radius:3px;padding:1px 5px;margin:2px 2px 0;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-weight:600'+(e.isDone?';opacity:0.5;text-decoration:line-through':'')+'" onclick="event.stopPropagation();'+onclick+'" title="'+e.title.replace(/"/g,'&quot;')+'">'+
           (e.isAction?'★ ':e.isDue?'📅 ':'')+e.title+'</div>';
       }).join('')+
       (function(){var total=(allDayEvents[d.date]||[]).length;var max=_calViewMode==='day'?6:2;return total>max?'<div style="font-size:9px;color:var(--text3);margin-top:2px">+'+(total-max)+' 件</div>':'';})()+
@@ -1760,7 +1758,8 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
       var sTime='';
       if(e.startH){var sh=Math.floor(e.startH);var sm=Math.round((e.startH-sh)*60);sTime=sh+':'+String(sm).padStart(2,'0');}
       var dataAttrs=e.isGcal&&e.htmlLink?'data-gcal-link="'+e.htmlLink.replace(/"/g,'&quot;')+'"':'data-task-id="'+e.id+'"';
-      bodyHTML+='<div class="gcal-event'+(e.isLog?' log':'')+'" '+dataAttrs+' style="top:'+(top+1)+'px;height:'+(height-2)+'px;left:calc('+left+'% + 2px);width:calc('+colW+'% - 4px);background:'+e.color+'" title="'+title+'">'+
+      var doneStyle=e.isDone?';opacity:0.5;text-decoration:line-through':'';
+      bodyHTML+='<div class="gcal-event'+(e.isLog?' log':'')+'" '+dataAttrs+' style="top:'+(top+1)+'px;height:'+(height-2)+'px;left:calc('+left+'% + 2px);width:calc('+colW+'% - 4px);background:'+e.color+doneStyle+'" title="'+title+'">'+
         (e.isGcal?'📅 ':e.isLog?'':'')+(COLS===1&&sTime?'<span style="opacity:.7;font-size:9px">'+sTime+' </span>':'')+e.title+'</div>';
     });
     bodyHTML+='</div>';
