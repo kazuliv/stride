@@ -796,7 +796,7 @@ function advanceRecurringTask(task,company,project){
   task.gcalEventIdDue='';
   rec.lastGenerated=nextDate;
   // Sync to GCal
-  if(task.gcal&&state.gcalConnected&&_gcalAccessToken){
+  if(task.gcal&&state.gcalConnected){
     syncGcalByMode(task,company,project);
   }
 }
@@ -1505,7 +1505,7 @@ function openCalSlotAction(dateStr,startTime,endTime){
 function doCalSlotSetAction(taskId,dateStr,startTime,endTime){
   updateTask(taskId,{actionDate:dateStr,actionStartTime:startTime,actionEndTime:endTime});
   var r=getTask(taskId);
-  if(r&&state.gcalConnected&&_gcalAccessToken){
+  if(r&&state.gcalConnected){
     if(!r.task.gcal){updateTask(taskId,{gcal:true,gcalMode:'action'});}
     syncGcalByMode(r.task,r.company,r.project);
   }
@@ -2252,7 +2252,7 @@ function calplanSetDate(taskId,field,value){
 function calplanSetCal(taskId,calId){
   updateTask(taskId,{gcalCalId:calId});
   const r=getTask(taskId);
-  if(r&&r.task.gcal&&r.task.gcalMode&&state.gcalConnected&&_gcalAccessToken){
+  if(r&&r.task.gcal&&r.task.gcalMode&&state.gcalConnected){
     syncGcalByMode(r.task,r.company,r.project);
   }
   calplanRefreshIframe();
@@ -2262,7 +2262,7 @@ function calplanSetGcalMode(taskId,mode){
   const r=getTask(taskId);if(!r)return;
   if(mode&&!state.gcalConnected){showToast('先にGoogleカレンダーを連携してください','error');openModal('integrations');return}
   updateTask(taskId,{gcal:!!mode,gcalMode:mode||''});
-  if(mode&&state.gcalConnected&&_gcalAccessToken){
+  if(mode&&state.gcalConnected){
     syncGcalByMode(r.task,r.company,r.project);
   }
   calplanRefreshIframe();
@@ -2638,9 +2638,9 @@ function setTodoActionDate(taskId,todoId,date){
   const oldDate=td.actionDate||'';
   td.actionDate=date;
   save();updateBadges();
-  if(state.gcalConnected&&_gcalAccessToken&&date){
+  if(state.gcalConnected&&date){
     syncTodoToGcal(r,td);
-  } else if(state.gcalConnected&&_gcalAccessToken&&!date&&oldDate&&td.gcalEventId){
+  } else if(state.gcalConnected&&!date&&oldDate&&td.gcalEventId){
     deleteTodoFromGcal(td,r.task);
   }
   if(ui.view==='home') renderContent();
@@ -2651,7 +2651,7 @@ function setTodoActionTime(taskId,todoId,field,value){
   const td=r.task.todos.find(x=>x.id===todoId);if(!td)return;
   td[field]=value;
   save();
-  if(state.gcalConnected&&_gcalAccessToken&&td.actionDate){
+  if(state.gcalConnected&&td.actionDate){
     syncTodoToGcal(r,td);
   }
   if(ui.selectedTaskId===taskId) renderDetail(taskId);
@@ -2765,15 +2765,25 @@ function addActionLog(taskId){
   save();renderDetail(taskId);
 }
 
+var _logSyncTimers={};
 function updateActionLog(taskId,logId,field,value){
   const r=getTask(taskId);if(!r)return;
   const log=(r.task.actionLogs||[]).find(l=>l.id===logId);
   if(!log)return;
   log[field]=value;
   save();
-  // Sync to GCal if date and times are set
-  if(log.date&&log.startTime&&log.endTime&&state.gcalConnected&&_gcalAccessToken){
-    syncActionLogToGcal(r,log);
+  // Sync to GCal if date and times are set — debounced
+  if(log.date&&log.startTime&&log.endTime&&state.gcalConnected){
+    var timerKey=taskId+'_'+logId;
+    if(_logSyncTimers[timerKey]) clearTimeout(_logSyncTimers[timerKey]);
+    _logSyncTimers[timerKey]=setTimeout(function(){
+      delete _logSyncTimers[timerKey];
+      var freshR=getTask(taskId);if(!freshR)return;
+      var freshLog=(freshR.task.actionLogs||[]).find(l=>l.id===logId);
+      if(freshLog&&freshLog.date&&freshLog.startTime&&freshLog.endTime){
+        syncActionLogToGcal(freshR,freshLog);
+      }
+    },2000);
   }
   // Re-render logs section only (avoid full re-render flicker)
   const logsEl=document.getElementById('det-action-logs');
@@ -2788,7 +2798,7 @@ function removeActionLog(taskId,logId){
   const log=logs.find(l=>l.id===logId);
   if(!log)return;
   // Delete from GCal if synced
-  if(log.gcalEventId&&state.gcalConnected&&_gcalAccessToken){
+  if(log.gcalEventId&&state.gcalConnected){
     deleteActionLogFromGcal(log,r.task);
   }
   r.task.actionLogs=logs.filter(l=>l.id!==logId);
@@ -2893,7 +2903,7 @@ function setTaskGcalMode(id,mode){
   const r=getTask(id);if(!r)return;
   if(mode&&!state.gcalConnected){showToast('先にGoogleカレンダーを連携してください','error');openModal('integrations');return}
   updateTask(id,{gcal:!!mode,gcalMode:mode||''});
-  if(mode&&state.gcalConnected&&_gcalAccessToken){
+  if(mode&&state.gcalConnected){
     syncGcalByMode(r.task,r.company,r.project);
   }else if(!mode){
     showToast('Googleカレンダーの登録を解除しました');
@@ -2903,7 +2913,7 @@ function setTaskGcalMode(id,mode){
 function setTaskGcalCal(id,calId){
   const r=getTask(id);if(!r)return;
   updateTask(id,{gcalCalId:calId});
-  if(r.task.gcal&&r.task.gcalMode&&state.gcalConnected&&_gcalAccessToken){
+  if(r.task.gcal&&r.task.gcalMode&&state.gcalConnected){
     syncGcalByMode(r.task,r.company,r.project);
   }
   renderDetail(id);
@@ -3881,7 +3891,7 @@ function doSaveRecurrence(taskId){
   save();closeModal();
   renderDetail(taskId);renderAll();
   // Sync to Google Calendar with RRULE if connected
-  if(r.task.gcal&&state.gcalConnected&&_gcalAccessToken){
+  if(r.task.gcal&&state.gcalConnected){
     createGcalRecurringEvent(r.task,r.company,r.project);
   }
   showToast('🔄 定期タスクを設定しました: '+recurrenceLabel(rec));
@@ -3932,7 +3942,7 @@ function buildIntegrations(){
     </div>
     <div class="int-desc">タスクに開始日・締め切りを設定すると、Googleカレンダーに期間イベントとして自動登録されます。Google OAuth2認証を使用します。</div>
     ${!GCAL_CLIENT_ID?'<div style="margin-top:8px;padding:8px 10px;background:#fffbef;border:1px solid #f5e4b0;border-radius:var(--radius-sm);font-size:11px;color:var(--accent4);line-height:1.5">⚠️ Client IDが未設定です。<a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--accent)">Google Cloud Console</a>でOAuth 2.0クライアントIDを取得し、コード内の<code>GCAL_CLIENT_ID</code>に設定してください。</div>':''}
-    ${state.gcalConnected&&_gcalAccessToken?'<div style="margin-top:6px;font-size:11px;color:var(--accent3)">✓ 認証済み（イベント '+((state.gcalEvents||[]).length)+'件取得済み）</div>':''}
+    ${state.gcalConnected?'<div style="margin-top:6px;font-size:11px;color:var(--accent3)">✓ 認証済み（イベント '+((state.gcalEvents||[]).length)+'件取得済み）</div>':''}
     ${state.gcalConnected&&!_gcalAccessToken?'<div style="margin-top:6px;font-size:11px;color:var(--accent4)">⚠ セッション切れ — 再接続が必要です</div>':''}
     <div class="int-actions">
       ${state.gcalConnected
