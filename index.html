@@ -513,12 +513,12 @@ textarea.form-input{resize:vertical;min-height:72px}
       <span style="flex:1">ダッシュボード</span>
       <span class="nav-chevron" id="dashboard-chevron">›</span>
     </div>
+    <div class="nav-row" id="nav-home" onclick="navTo('home',null,null,null,this)">
+      <span class="nav-icon">🏠</span><span class="nav-label" style="font-weight:600">ホーム</span>
+    </div>
     <div class="nav-row" id="nav-inbox" onclick="navTo('inbox',null,null,null,this)" style="background:var(--accent-light)">
       <span class="nav-icon">📥</span><span class="nav-label" style="font-weight:600">Inbox</span>
       <span class="nav-badge" id="badge-inbox" style="background:var(--accent);color:#fff;display:none">0</span>
-    </div>
-    <div class="nav-row" id="nav-home" onclick="navTo('home',null,null,null,this)">
-      <span class="nav-icon">🏠</span><span class="nav-label" style="font-weight:600">ホーム</span>
     </div>
     <div class="nav-row" id="nav-today" onclick="navTo('today',null,null,null,this)">
       <span class="nav-icon">☀️</span><span class="nav-label">今日のアクション</span>
@@ -1296,10 +1296,11 @@ function renderHome(c){
   // ── Greeting & stats (unchanged) ──
   let h='<div class="home-greeting">'+
     '<div><div class="home-date">'+dateLabel+'</div><div class="home-title">'+greeting+'</div></div>'+
-    '<div style="display:flex;gap:8px">'+
-      '<button class="btn btn-primary btn-sm" onclick="navTo(\'today\',null,null,null,document.getElementById(\'nav-today\'))">⚡ 今日のアクション</button>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn btn-primary btn-sm" onclick="navTo(\'inbox\',null,null,null,document.getElementById(\'nav-inbox\'))">📥 Inbox'+((state.inbox||[]).length?' ('+state.inbox.length+')':'')+' </button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="navTo(\'calplan\',null,null,null,document.getElementById(\'nav-calplan\'))">📅 カレンダー計画</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="navTo(\'today\',null,null,null,document.getElementById(\'nav-today\'))">⚡ 今日のアクション</button>'+
       '<button class="btn btn-ghost btn-sm" onclick="openAddTask()">＋ タスク追加</button>'+
-      '<button class="btn btn-ghost btn-sm" onclick="openCsvExport()" title="タスク一覧をCSVでダウンロード">📥 CSV出力</button>'+
     '</div></div>';
   h+='<div class="home-stats">'+
     chip('blue',total-done,'残タスク',"navTo('all',null,null,null,document.getElementById('nav-all'))")+
