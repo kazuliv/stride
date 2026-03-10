@@ -2243,9 +2243,9 @@ function setCalplanFilter(val){
 function calplanSetDate(taskId,field,value){
   updateTask(taskId,{[field]:value});
   const r=getTask(taskId);
-  if(r&&r.task.gcal&&state.gcalConnected&&_gcalAccessToken){
-    if(r.task.gcalMode) syncGcalByMode(r.task,r.company,r.project);
-    else createGcalEvent(r.task,r.company,r.project);
+  if(r&&r.task.gcal&&state.gcalConnected&&
+    (field==='actionDate'||field==='actionStartTime'||field==='actionEndTime'||field==='startDate'||field==='dueDate')){
+    debouncedGcalSync(taskId,r);
   }
   calplanRefreshIframe();
   updateBadges();
@@ -2831,19 +2831,28 @@ async function deleteActionLogFromGcal(log,task){
   }
 }
 
+var _gcalSyncTimers={};
 function saveDetailField(id,field,value){
   updateTask(id,{[field]:value.trim()});
   renderAll();
   const r=getTask(id);
-  // Trigger GCal update if dates/times changed
-  if(r&&r.task.gcal&&state.gcalConnected&&_gcalAccessToken&&
+  // Trigger GCal update if dates/times changed — debounced to avoid multiple syncs
+  if(r&&r.task.gcal&&state.gcalConnected&&
     (field==='startDate'||field==='dueDate'||field==='actionDate'||field==='actionStartTime'||field==='actionEndTime')){
-    if(r.task.gcalMode){
-      syncGcalByMode(r.task,r.company,r.project);
-    }else{
-      updateGcalEvent(r.task,r.company,r.project);
-    }
+    debouncedGcalSync(id,r);
   }
+}
+function debouncedGcalSync(taskId,r){
+  if(_gcalSyncTimers[taskId]) clearTimeout(_gcalSyncTimers[taskId]);
+  _gcalSyncTimers[taskId]=setTimeout(function(){
+    delete _gcalSyncTimers[taskId];
+    const fresh=getTask(taskId);if(!fresh)return;
+    if(fresh.task.gcalMode){
+      syncGcalByMode(fresh.task,fresh.company,fresh.project);
+    }else{
+      updateGcalEvent(fresh.task,fresh.company,fresh.project);
+    }
+  },2000); // 2秒待ってから同期（続けて入力する時間を確保）
 }
 
 function addTodo(taskId){
@@ -4174,8 +4183,12 @@ async function doRefreshGdrive(){
 // ============================================================
 // INTEGRATIONS LOGIC — Google Calendar API
 // ============================================================
-async function gcalApiFetch(url,options={}){
-  if(!_gcalAccessToken)throw new Error('Not authenticated');
+async function gcalApiFetch(url,options={},_isRetry){
+  if(!_gcalAccessToken){
+    // Try silent re-auth before giving up
+    const refreshed=await gcalSilentRefresh();
+    if(!refreshed) throw new Error('Not authenticated');
+  }
   const resp=await fetch(url,{
     ...options,
     headers:{
@@ -4184,15 +4197,46 @@ async function gcalApiFetch(url,options={}){
       ...(options.headers||{}),
     },
   });
-  if(resp.status===401){
+  if(resp.status===401&&!_isRetry){
+    // Token expired → try silent refresh and retry once
+    console.log('[GCal] Token expired, attempting silent refresh...');
+    const refreshed=await gcalSilentRefresh();
+    if(refreshed) return gcalApiFetch(url,options,true);
     _gcalAccessToken=null;
     state.gcalConnected=false;
     save();updateIntDots();
     showToast('認証が期限切れです。再接続してください。','error');
     throw new Error('Token expired');
   }
+  if(resp.status===204) return {}; // DELETE returns no body
   if(!resp.ok)throw new Error('API error: '+resp.status);
   return resp.json();
+}
+
+function gcalSilentRefresh(){
+  return new Promise(function(resolve){
+    if(!GCAL_CLIENT_ID||typeof google==='undefined'||!google.accounts){resolve(false);return;}
+    try{
+      if(!_gcalTokenClient){
+        _gcalTokenClient=google.accounts.oauth2.initTokenClient({
+          client_id:GCAL_CLIENT_ID,
+          scope:GCAL_SCOPES,
+          callback:function(tokenResponse){
+            if(tokenResponse.error){resolve(false);return;}
+            _gcalAccessToken=tokenResponse.access_token;
+            state.gcalConnected=true;save();updateIntDots();
+            console.log('[GCal] Token refreshed silently');
+            resolve(true);
+          },
+        });
+      }
+      // Use prompt:'' for silent/consent-less refresh (if user already granted)
+      _gcalTokenClient.requestAccessToken({prompt:''});
+    }catch(e){
+      console.warn('[GCal] Silent refresh failed:',e);
+      resolve(false);
+    }
+  });
 }
 
 async function fetchGcalEvents(){
@@ -4611,11 +4655,18 @@ checkReminders();
 // Generate recurring tasks on load and every hour
 generateRecurringTasks();
 setInterval(generateRecurringTasks,3600000);
-// Notify if GCal was connected but token expired (page reload)
+// Auto-refresh GCal token on page load if previously connected
 if(state.gcalConnected&&!_gcalAccessToken){
-  setTimeout(function(){
-    showToast('Googleカレンダーの再認証が必要です。連携設定から再接続してください。','info');
-  },2000);
+  setTimeout(async function(){
+    const ok=await gcalSilentRefresh();
+    if(ok){
+      console.log('[GCal] Auto-reconnected on page load');
+      await Promise.all([fetchGcalEvents(),fetchGcalCalendars()]);
+      renderAll();
+    } else {
+      showToast('Googleカレンダーの再認証が必要です。連携設定から再接続してください。','info');
+    }
+  },1500);
 }
 </script>
 </body>
