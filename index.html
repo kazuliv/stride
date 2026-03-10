@@ -1616,24 +1616,11 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
     });
   });
 
-  // GCal events — filter out events already shown as Stride tasks/logs
+  // GCal events (already filtered at fetch time — no Stride-created events)
   if(state.gcalEvents&&state.gcalEvents.length){
-    // Collect all gcalEventIds from Stride tasks/logs to avoid duplicates
-    var strideGcalIds={};
-    all.forEach(function(t){
-      if(t.gcalEventId) strideGcalIds[t.gcalEventId]=true;
-      if(t.gcalEventIdDue) strideGcalIds[t.gcalEventIdDue]=true;
-      (t.actionLogs||[]).forEach(function(log){
-        if(log.gcalEventId) strideGcalIds[log.gcalEventId]=true;
-      });
-      (t.todos||[]).forEach(function(td){
-        if(td.gcalEventId) strideGcalIds[td.gcalEventId]=true;
-      });
-    });
     var gcalColor=state.calGcalColor||'#4285f4';
     state.gcalEvents.forEach(function(e){
       if(!e.start||!e.end)return;
-      if(strideGcalIds[e.id]) return; // skip — already shown as Stride event
       var startStr=e.start.slice(0,10);
       var endStr=e.end.slice(0,10);
       if(e.allDay){
@@ -3916,8 +3903,37 @@ function buildIntegrations(){
       <input type="color" value="${state.calGcalColor||'#4285f4'}" onchange="state.calGcalColor=this.value;save();" style="width:36px;height:28px;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:0">
       <span style="font-size:11px;color:var(--text3)">Googleカレンダーのイベント表示色</span>
     </div>
+    ${(state.gcalCalendars||[]).length>0?`
+    <div style="margin-top:12px">
+      <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px">表示するカレンダー</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">チェックしたカレンダーのイベントのみStrideに表示します。Stride作成イベント（★付き）は自動除外されます。</div>
+      ${(state.gcalCalendars||[]).map(function(c){
+        var checked=!(state.gcalDisplayCalendars&&state.gcalDisplayCalendars.length>0)||
+          (state.gcalDisplayCalendars||[]).includes(c.id);
+        return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:12px">'+
+          '<input type="checkbox" '+(checked?'checked':'')+' onchange="toggleGcalDisplayCal(\''+c.id.replace(/'/g,"\\'")+'\',this.checked)" style="accent-color:'+(c.color||'var(--accent)')+'">'+
+          '<span style="width:10px;height:10px;border-radius:50%;background:'+(c.color||'#ccc')+';flex-shrink:0"></span>'+
+          c.summary+(c.primary?' (メイン)':'')+
+        '</label>';
+      }).join('')}
+    </div>`:``}
   </div>
   <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">閉じる</button></div>`;
+}
+
+function toggleGcalDisplayCal(calId,checked){
+  if(!state.gcalDisplayCalendars){
+    // Initialize with all calendars
+    state.gcalDisplayCalendars=(state.gcalCalendars||[]).map(function(c){return c.id;});
+  }
+  if(checked){
+    if(!state.gcalDisplayCalendars.includes(calId)) state.gcalDisplayCalendars.push(calId);
+  } else {
+    state.gcalDisplayCalendars=state.gcalDisplayCalendars.filter(function(id){return id!==calId;});
+  }
+  save();
+  // Refresh events with new filter
+  fetchGcalEvents().then(function(){buildHomeWeekGrid();});
 }
 
 async function doConnectGcal(){
@@ -4139,8 +4155,15 @@ async function fetchGcalEvents(){
   const timeMin=new Date(now);timeMin.setDate(timeMin.getDate()-7);
   const timeMax=new Date(now);timeMax.setDate(timeMax.getDate()+90);
   try{
-    // Collect all calendar IDs to fetch (primary + any used by tasks)
-    const calIds=new Set([state.gcalCalendarId||'primary']);
+    // Use selected display calendars, or fall back to primary
+    var displayCals=state.gcalDisplayCalendars||[];
+    const calIds=new Set();
+    if(displayCals.length>0){
+      displayCals.forEach(function(id){calIds.add(id);});
+    } else {
+      calIds.add(state.gcalCalendarId||'primary');
+    }
+    // Also add calendars used by tasks (for sync purposes)
     for(const c of state.companies)for(const p of c.projects)for(const t of p.tasks){if(t.gcalCalId)calIds.add(t.gcalCalId);}
     var allItems=[];
     for(const cid of calIds){
@@ -4157,8 +4180,24 @@ async function fetchGcalEvents(){
       }while(pageToken);
     }
     console.log('[GCal] Total:',allItems.length,'events from',calIds.size,'calendar(s)');
+
+    // Collect Stride-created gcalEventIds for dedup
+    var strideIds={};
+    for(const c of state.companies)for(const p of c.projects)for(const t of p.tasks){
+      if(t.gcalEventId)strideIds[t.gcalEventId]=true;
+      if(t.gcalEventIdDue)strideIds[t.gcalEventIdDue]=true;
+      (t.actionLogs||[]).forEach(function(l){if(l.gcalEventId)strideIds[l.gcalEventId]=true;});
+      (t.todos||[]).forEach(function(td){if(td.gcalEventId)strideIds[td.gcalEventId]=true;});
+    }
+
     const eventsById={};
-    state.gcalEvents=allItems.map(function(e){
+    state.gcalEvents=[];
+    allItems.forEach(function(e){
+      // Skip Stride-created events (matched by ID or ★ prefix)
+      if(strideIds[e.id]) return;
+      if((e.summary||'').startsWith('★')) return;
+      // Dedup by event ID (same event from multiple calendars)
+      if(eventsById[e.id]) return;
       const ev={
         id:e.id,
         summary:e.summary||'(無題)',
@@ -4169,10 +4208,19 @@ async function fetchGcalEvents(){
         htmlLink:e.htmlLink,
       };
       eventsById[e.id]=ev;
-      return ev;
+      state.gcalEvents.push(ev);
     });
     save();
-    syncGcalChangesToStride(eventsById);
+    // Still sync stride events (need full list for reverse sync)
+    var allEventsById={};
+    allItems.forEach(function(e){
+      allEventsById[e.id]={
+        id:e.id,summary:e.summary||'(無題)',
+        start:e.start.dateTime||e.start.date,end:e.end.dateTime||e.end.date,
+        allDay:!!e.start.date,color:e.colorId||null,htmlLink:e.htmlLink,
+      };
+    });
+    syncGcalChangesToStride(allEventsById);
   }catch(e){
     console.error('Failed to fetch GCal events:',e);
   }
