@@ -1720,7 +1720,7 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
   bodyHTML+='<div class="gcal-grid" style="grid-template-columns:repeat('+COLS+',1fr)">';
   viewDays.forEach(function(d){
     var isToday=d.isToday;
-    bodyHTML+='<div class="gcal-col" style="height:'+(HOURS*HOUR_H)+'px;background:'+(isToday?'rgba(59,125,216,.03)':'var(--surface)')+';" onclick="(function(e){if(e.target.classList.contains(\'gcal-col\')){var rect=e.target.getBoundingClientRect();var y=e.clientY-rect.top;var hour=Math.floor(y/'+HOUR_H+')+'+START_HOUR+';calClickSlot(\''+d.date+'\',hour);}})( event)">';
+    bodyHTML+='<div class="gcal-col" data-date="'+d.date+'" style="height:'+(HOURS*HOUR_H)+'px;background:'+(isToday?'rgba(59,125,216,.03)':'var(--surface)')+';">';
     for(var hh=0;hh<HOURS;hh++){
       bodyHTML+='<div class="gcal-hour-line" style="top:'+(hh*HOUR_H)+'px"></div>';
       bodyHTML+='<div class="gcal-hour-line" style="top:'+(hh*HOUR_H+HOUR_H/2)+'px;border-top-style:dashed;opacity:.4"></div>';
@@ -1744,12 +1744,12 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
       var top=(Math.max(e.startH,START_HOUR)-START_HOUR)*HOUR_H;
       var height=Math.max((Math.min(e.endH,END_HOUR)-Math.max(e.startH,START_HOUR))*HOUR_H,20);
       var title=e.title.replace(/"/g,'&quot;').replace(/</g,'&lt;');
-      var onclick=e.isGcal&&e.htmlLink?'event.stopPropagation();window.open(\''+e.htmlLink.replace(/'/g,"\\'")+'\',\'_blank\')':'event.stopPropagation();selectTask(\''+e.id+'\')';
       var colW=100/maxCols;
       var left=e._col*colW;
       var sTime='';
       if(e.startH){var sh=Math.floor(e.startH);var sm=Math.round((e.startH-sh)*60);sTime=sh+':'+String(sm).padStart(2,'0');}
-      bodyHTML+='<div class="gcal-event'+(e.isLog?' log':'')+'" style="top:'+(top+1)+'px;height:'+(height-2)+'px;left:calc('+left+'% + 2px);width:calc('+colW+'% - 4px);background:'+e.color+'" onclick="'+onclick+'" title="'+title+'">'+
+      var dataAttrs=e.isGcal&&e.htmlLink?'data-gcal-link="'+e.htmlLink.replace(/"/g,'&quot;')+'"':'data-task-id="'+e.id+'"';
+      bodyHTML+='<div class="gcal-event'+(e.isLog?' log':'')+'" '+dataAttrs+' style="top:'+(top+1)+'px;height:'+(height-2)+'px;left:calc('+left+'% + 2px);width:calc('+colW+'% - 4px);background:'+e.color+'" title="'+title+'">'+
         (e.isGcal?'📅 ':e.isLog?'':'')+(COLS===1&&sTime?'<span style="opacity:.7;font-size:9px">'+sTime+' </span>':'')+e.title+'</div>';
     });
     bodyHTML+='</div>';
@@ -1757,6 +1757,33 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
   bodyHTML+='</div></div>';
 
   grid.innerHTML='<div class="gcal-wrap">'+toolbarHTML+headerHTML+bodyHTML+'</div>';
+
+  // Delegated click handler for the entire calendar grid
+  var gridEl=grid.querySelector('.gcal-grid');
+  if(gridEl){
+    gridEl.addEventListener('click',function(ev){
+      // Check if clicked on an event
+      var eventEl=ev.target.closest('.gcal-event');
+      if(eventEl){
+        ev.stopPropagation();
+        if(eventEl.dataset.gcalLink){
+          window.open(eventEl.dataset.gcalLink,'_blank');
+        } else if(eventEl.dataset.taskId){
+          selectTask(eventEl.dataset.taskId);
+        }
+        return;
+      }
+      // Otherwise: clicked on empty space in a column → add log/set action
+      var colEl=ev.target.closest('.gcal-col');
+      if(colEl&&colEl.dataset.date){
+        var rect=colEl.getBoundingClientRect();
+        var y=ev.clientY-rect.top;
+        var hour=Math.floor(y/HOUR_H)+START_HOUR;
+        hour=Math.max(START_HOUR,Math.min(END_HOUR-1,hour));
+        calClickSlot(colEl.dataset.date,hour);
+      }
+    });
+  }
 
   // Scroll to current time
   var body=grid.querySelector('.gcal-body');
