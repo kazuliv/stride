@@ -1554,17 +1554,10 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
   var timedEvents={};
   viewDates.forEach(function(d){allDayEvents[d]=[];timedEvents[d]=[];});
 
-  // Tasks → all-day events
-  all.forEach(function(t){
-    if(t.status==='done') return;
-    var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
-    if(t.actionDate&&allDayEvents[t.actionDate])
-      allDayEvents[t.actionDate].push({id:t.id,title:t.title,color:tc,isAction:true});
-    else if(t.dueDate&&allDayEvents[t.dueDate]&&t.actionDate!==t.dueDate)
-      allDayEvents[t.dueDate].push({id:t.id,title:t.title,color:tc,isDue:true});
-  });
+  // Track which task IDs have timed entries (to avoid showing in allDay too)
+  var tasksWithTimedEntry={};
 
-  // Tasks → timed events (main actionStartTime) — only if no actionLogs exist for same time
+  // Tasks → timed events (main actionStartTime)
   all.forEach(function(t){
     if(t.status==='done') return;
     var targetDate=t.actionDate&&viewDates.includes(t.actionDate)?t.actionDate:
@@ -1581,6 +1574,7 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
         var eH=sH+1;
         if(t.actionEndTime){var ep=t.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
         timedEvents[targetDate].push({id:t.id,title:t.title,color:tc,startH:sH,endH:eH});
+        tasksWithTimedEntry[t.id]=true;
       }
     }
   });
@@ -1595,7 +1589,19 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam){
       var ep=log.endTime.split(':');var eH=parseInt(ep[0])+parseInt(ep[1])/60;
       if(eH<=sH) return;
       timedEvents[log.date].push({id:t.id,title:'📋 '+t.title,color:tc,startH:sH,endH:eH,isLog:true});
+      tasksWithTimedEntry[t.id]=true;
     });
+  });
+
+  // Tasks → all-day events (ONLY if not already shown as timed event)
+  all.forEach(function(t){
+    if(t.status==='done') return;
+    if(tasksWithTimedEntry[t.id]) return; // already shown as timed block
+    var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
+    if(t.actionDate&&allDayEvents[t.actionDate])
+      allDayEvents[t.actionDate].push({id:t.id,title:t.title,color:tc,isAction:true});
+    else if(t.dueDate&&allDayEvents[t.dueDate]&&t.actionDate!==t.dueDate)
+      allDayEvents[t.dueDate].push({id:t.id,title:t.title,color:tc,isDue:true});
   });
 
   // Todos → timed events
