@@ -2765,25 +2765,16 @@ function addActionLog(taskId){
   save();renderDetail(taskId);
 }
 
-var _logSyncTimers={};
 function updateActionLog(taskId,logId,field,value){
   const r=getTask(taskId);if(!r)return;
   const log=(r.task.actionLogs||[]).find(l=>l.id===logId);
   if(!log)return;
   log[field]=value;
   save();
-  // Sync to GCal if date and times are set — debounced
+  // Sync to GCal immediately when all fields are filled
   if(log.date&&log.startTime&&log.endTime&&state.gcalConnected){
-    var timerKey=taskId+'_'+logId;
-    if(_logSyncTimers[timerKey]) clearTimeout(_logSyncTimers[timerKey]);
-    _logSyncTimers[timerKey]=setTimeout(function(){
-      delete _logSyncTimers[timerKey];
-      var freshR=getTask(taskId);if(!freshR)return;
-      var freshLog=(freshR.task.actionLogs||[]).find(l=>l.id===logId);
-      if(freshLog&&freshLog.date&&freshLog.startTime&&freshLog.endTime){
-        syncActionLogToGcal(freshR,freshLog);
-      }
-    },2000);
+    console.log('[ActionLog] Syncing to GCal:', log.date, log.startTime, log.endTime);
+    syncActionLogToGcal(r,log);
   }
   // Re-render logs section only (avoid full re-render flicker)
   const logsEl=document.getElementById('det-action-logs');
@@ -2806,28 +2797,35 @@ function removeActionLog(taskId,logId){
 }
 
 async function syncActionLogToGcal(r,log){
+  if(!log.date||!log.startTime||!log.endTime) return;
   const calId=getTaskCalId(r.task);
   const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const startDT=log.date+'T'+log.startTime+':00';
+  const endDT=log.date+'T'+log.endTime+':00';
   const event={
     summary:'★ ['+r.company.name+'] '+r.task.title+' (ログ)',
     description:r.project.name+': '+(r.task.note||''),
-    start:{dateTime:log.date+'T'+log.startTime+':00',timeZone:tz},
-    end:{dateTime:log.date+'T'+log.endTime+':00',timeZone:tz},
+    start:{dateTime:startDT,timeZone:tz},
+    end:{dateTime:endDT,timeZone:tz},
   };
+  console.log('[ActionLog→GCal] calId='+calId+' start='+startDT+' end='+endDT+' existing='+log.gcalEventId);
   try{
     if(log.gcalEventId){
       await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+log.gcalEventId,{method:'PATCH',body:JSON.stringify(event)});
       showToast('📅 アクションログのカレンダー予定を更新しました');
     }else{
       const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(event)});
-      log.gcalEventId=created.id;save();
-      showToast('📅 アクションログをカレンダーに登録しました');
+      if(created&&created.id){
+        log.gcalEventId=created.id;save();
+        console.log('[ActionLog→GCal] Created event:', created.id);
+        showToast('📅 アクションログをカレンダーに登録しました');
+      }
     }
     await fetchGcalEvents();
     if(ui.view==='home'||ui.view==='calplan')renderContent();
   }catch(e){
-    console.error('GCal action log sync failed:',e);
-    showToast('カレンダー登録に失敗しました','error');
+    console.error('[ActionLog→GCal] Failed:', e);
+    showToast('カレンダー登録に失敗しました: '+e.message,'error');
   }
 }
 
