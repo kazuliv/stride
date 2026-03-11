@@ -774,11 +774,27 @@ function generateRecurringTasks(){
   if(updated){save();renderAll();}
 }
 
-function advanceRecurringTask(task,company,project){
+async function advanceRecurringTask(task,company,project){
   const rec=task.recurrence;
   const baseDate=task.actionDate||today();
   const nextDate=getNextRecurrenceDate(rec,baseDate);
   if(!nextDate) return;
+  // Delete old GCal events before advancing
+  const calId=getTaskCalId(task);
+  if(state.gcalConnected){
+    if(task.gcalEventId){
+      try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventId,{method:'DELETE'});}catch(e){console.warn('[Recur] delete old action event failed:',e);}
+    }
+    if(task.gcalEventIdDue){
+      try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventIdDue,{method:'DELETE'});}catch(e){console.warn('[Recur] delete old due event failed:',e);}
+    }
+    // Delete old action log GCal events
+    for(const log of (task.actionLogs||[])){
+      if(log.gcalEventId){
+        try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+log.gcalEventId,{method:'DELETE'});}catch(e){}
+      }
+    }
+  }
   // Reset task for next occurrence
   task.status='todo';
   task.actionDate=nextDate;
@@ -788,14 +804,13 @@ function advanceRecurringTask(task,company,project){
   if(task.todos){
     task.todos.forEach(function(td){td.done=false;td.actionDate=nextDate;});
   }
-  // Clear old action logs (they belong to the previous occurrence)
-  // Keep them in a history if needed, but don't display
+  // Clear old action logs
   task.actionLogs=[];
-  // Clear old GCal event IDs (will re-sync)
+  // Clear old GCal event IDs
   task.gcalEventId='';
   task.gcalEventIdDue='';
   rec.lastGenerated=nextDate;
-  // Sync to GCal
+  // Create new GCal events for the next occurrence
   if(task.gcal&&state.gcalConnected){
     syncGcalByMode(task,company,project);
   }
@@ -2942,7 +2957,7 @@ async function syncGcalByMode(task,company,project){
       }else{
         ev.start={date:task.actionDate};ev.end={date:addDays(task.actionDate,1)};
       }
-      if(task.recurrence?.enabled){const rrule=buildRecurrenceGcalRrule(task.recurrence);if(rrule)ev.recurrence=[rrule];}
+      // Note: No RRULE — Stride manages recurrence internally, GCal gets single events
       const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
       updates.gcalEventId=created.id;
     }
@@ -2951,7 +2966,6 @@ async function syncGcalByMode(task,company,project){
       const ev={summary:'📅 ['+company.name+'] '+task.title,description:project.name+': '+(task.note||'')};
       ev.start=task.startDate?{date:task.startDate}:{date:task.dueDate};
       ev.end=task.dueDate?{date:addDays(task.dueDate,1)}:{date:addDays(task.startDate,1)};
-      if(task.recurrence?.enabled){const rrule=buildRecurrenceGcalRrule(task.recurrence);if(rrule)ev.recurrence=[rrule];}
       const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
       updates.gcalEventIdDue=created.id;
     }
