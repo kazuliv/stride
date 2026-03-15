@@ -579,6 +579,10 @@ textarea.form-input{resize:vertical;min-height:72px}
       <div class="int-dot" id="gdrive-dot"></div>
       <span class="int-label" style="color:var(--text2)">Drive</span>
     </div>
+    <div class="integration-badge" onclick="openModal('backup')" title="バックアップ・復元">
+      <span style="font-size:13px">💾</span>
+      <span class="int-label" style="color:var(--text2)">バックアップ</span>
+    </div>
   </div>
 </aside>
 
@@ -3534,6 +3538,7 @@ function buildModal(type,...args){
   if(type==='integrations')return buildIntegrations();
   if(type==='kanbanSettings')return buildKanbanSettings();
   if(type==='csvExport')return buildCsvExport();
+  if(type==='backup')return buildBackupModal();
   if(type==='recurrence')return buildRecurrenceModal(args[0]);
   if(type==='inboxClassify')return buildInboxClassify(args[0]);
   if(type==='inboxDelegate')return buildInboxDelegate(args[0]);
@@ -4619,6 +4624,155 @@ function openSidebar(){document.getElementById('sidebar').classList.add('open');
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('mobOverlay').classList.remove('show')}
 
 // ============================================================
+// BACKUP & RESTORE
+// ============================================================
+const BACKUP_REMINDER_KEY='stride_last_backup';
+
+function buildBackupModal(){
+  const lastBackup=localStorage.getItem(BACKUP_REMINDER_KEY);
+  const lastLabel=lastBackup?new Date(lastBackup).toLocaleString('ja-JP'):'まだバックアップしていません';
+  const taskCount=getAllTasks().length;
+  const companyCount=state.companies.length;
+  return`<div class="modal-title">💾 バックアップ・復元<span class="modal-close" onclick="closeModal()">✕</span></div>
+  <div style="margin-bottom:16px;padding:14px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);line-height:1.7">
+    <div style="font-weight:700;color:var(--text);margin-bottom:6px">⚠ データについて</div>
+    Strideのデータはブラウザの<b>localStorage</b>に保存されています。<br>
+    以下の場合にデータが消える可能性があります：<br>
+    <span style="color:var(--red)">• ブラウザのキャッシュ・サイトデータを削除した場合</span><br>
+    <span style="color:var(--red)">• 別のブラウザ・端末で開いた場合（データは共有されません）</span><br>
+    <span style="color:var(--red)">• ブラウザの自動クリーンアップ（Safari等）</span><br>
+    <b>定期的なバックアップを強くおすすめします。</b>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">📥 エクスポート（バックアップ）</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">全データをJSONファイルとしてダウンロードします。<br>企業: ${companyCount}件 / タスク: ${taskCount}件</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">前回のバックアップ: ${lastLabel}</div>
+      <button class="btn btn-primary" onclick="exportBackup()" style="width:100%">💾 バックアップをダウンロード</button>
+    </div>
+    <div style="padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">📤 インポート（復元）</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">バックアップファイルからデータを復元します。<br><span style="color:var(--red);font-weight:600">※ 現在のデータは上書きされます。</span></div>
+      <label class="btn btn-ghost" style="width:100%;justify-content:center;cursor:pointer;border:2px dashed var(--border2)">
+        📂 バックアップファイルを選択
+        <input type="file" accept=".json" onchange="importBackup(this)" style="display:none">
+      </label>
+    </div>
+  </div>
+  <div style="margin-top:14px;padding:12px;background:var(--accent-light);border-radius:var(--radius-sm);font-size:12px;color:var(--text)">
+    <div style="font-weight:700;margin-bottom:4px">🔧 データが消えた場合の復旧方法</div>
+    <ol style="margin:0;padding-left:18px;line-height:1.8">
+      <li>この画面を開く（サイドバー下部の 💾 ボタン）</li>
+      <li>「バックアップファイルを選択」をクリック</li>
+      <li>以前ダウンロードした <code>stride-backup-YYYY-MM-DD.json</code> を選択</li>
+      <li>確認ダイアログで「復元する」を選択</li>
+    </ol>
+    <div style="margin-top:6px;color:var(--text2)">※ バックアップファイルがない場合、データの復旧はできません。<br>週に1回以上のバックアップをおすすめします。</div>
+  </div>`;
+}
+
+function exportBackup(){
+  const data={
+    _stride_backup: true,
+    _version: 1,
+    _exportedAt: new Date().toISOString(),
+    state: state,
+    ui: {
+      expandedCompanies: ui.expandedCompanies,
+      expandedProjects: ui.expandedProjects,
+      statusFilter: ui.statusFilter,
+      expandedProjSections: ui.expandedProjSections,
+      ganttZoom: ui.ganttZoom,
+      dashboardExpanded: ui.dashboardExpanded
+    }
+  };
+  const json=JSON.stringify(data,null,2);
+  const blob=new Blob([json],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='stride-backup-'+today()+'.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  localStorage.setItem(BACKUP_REMINDER_KEY,new Date().toISOString());
+  showToast('バックアップをダウンロードしました','success');
+  // Refresh modal to update last backup time
+  openModal('backup');
+}
+
+function importBackup(input){
+  const file=input.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!data._stride_backup||!data.state){
+        showToast('無効なバックアップファイルです','error');
+        return;
+      }
+      const taskCount=0;
+      let count=0;
+      (data.state.companies||[]).forEach(c=>(c.projects||[]).forEach(p=>count+=(p.tasks||[]).length));
+      const companyCount=(data.state.companies||[]).length;
+      const exportDate=data._exportedAt?new Date(data._exportedAt).toLocaleString('ja-JP'):'不明';
+      if(!confirm('以下のバックアップからデータを復元しますか？\n\nバックアップ日時: '+exportDate+'\n企業数: '+companyCount+'\nタスク数: '+count+'\n\n⚠ 現在のデータは上書きされます。')){
+        return;
+      }
+      Object.assign(state,data.state);
+      if(data.ui){
+        ui.expandedCompanies=data.ui.expandedCompanies||{};
+        ui.expandedProjects=data.ui.expandedProjects||{};
+        if(data.ui.statusFilter)ui.statusFilter=data.ui.statusFilter;
+        if(data.ui.expandedProjSections)ui.expandedProjSections=data.ui.expandedProjSections;
+        if(data.ui.ganttZoom)ui.ganttZoom=data.ui.ganttZoom;
+      }
+      save();
+      closeModal();
+      renderAll();
+      showToast('データを復元しました（'+count+'件のタスク）','success');
+    }catch(err){
+      showToast('ファイルの読み込みに失敗しました: '+err.message,'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Auto backup reminder - check every time renderAll is called
+function checkBackupReminder(){
+  const last=localStorage.getItem(BACKUP_REMINDER_KEY);
+  if(!last){
+    // Never backed up and has real data
+    if(getAllTasks().length>0){
+      showBackupReminder('まだ一度もバックアップしていません。');
+    }
+    return;
+  }
+  const daysSince=Math.floor((Date.now()-new Date(last).getTime())/(1000*60*60*24));
+  if(daysSince>=7&&getAllTasks().length>0){
+    showBackupReminder('前回のバックアップから'+daysSince+'日経過しています。');
+  }
+}
+let _backupReminderShown=false;
+function showBackupReminder(msg){
+  if(_backupReminderShown) return;
+  _backupReminderShown=true;
+  // Show after a short delay so it doesn't interrupt initial load
+  setTimeout(function(){
+    const el=document.createElement('div');
+    el.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius);box-shadow:var(--shadow-lg);padding:14px 20px;z-index:200;display:flex;align-items:center;gap:12px;font-size:13px;max-width:500px';
+    el.innerHTML='<span style="font-size:20px">💾</span><div><div style="font-weight:700;margin-bottom:2px">バックアップのお知らせ</div><div style="color:var(--text2);font-size:12px">'+msg+'</div></div>'+
+      '<button class="btn btn-primary btn-sm" onclick="this.closest(\'div\').remove();openModal(\'backup\')" style="white-space:nowrap">今すぐ</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="this.closest(\'div\').remove()" style="white-space:nowrap">後で</button>';
+    document.body.appendChild(el);
+    // Auto dismiss after 15 seconds
+    setTimeout(function(){if(el.parentNode)el.remove();},15000);
+  },3000);
+}
+
+// ============================================================
 // CSV EXPORT
 // ============================================================
 function openCsvExport(){
@@ -4729,6 +4883,7 @@ updateIntDots();
 navTo('home',null,null,null,document.getElementById('nav-home'));
 setInterval(checkReminders,60000);
 checkReminders();
+checkBackupReminder();
 // Generate recurring tasks on load and every hour
 generateRecurringTasks();
 setInterval(generateRecurringTasks,3600000);
