@@ -404,6 +404,22 @@ input,textarea,select{font-family:inherit;outline:none}
 .calplan-status{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .calplan-pri{font-size:10px;flex-shrink:0;width:14px;text-align:center}
 
+/* ===== FLOATING CALENDAR DRAWER ===== */
+.cal-fab{position:fixed;bottom:24px;left:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow-md);z-index:150;transition:all .2s;user-select:none}
+.cal-fab:hover{transform:scale(1.08);box-shadow:var(--shadow-lg)}
+.cal-fab.hidden{display:none}
+.cal-drawer{position:fixed;top:0;left:0;width:min(520px,45vw);height:100vh;background:var(--surface);box-shadow:4px 0 24px rgba(0,0,0,.12);z-index:170;transform:translateX(-100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
+.cal-drawer.open{transform:translateX(0)}
+.cal-drawer-resize{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize;z-index:2}
+.cal-drawer-resize:hover,.cal-drawer-resize.dragging{background:var(--accent);opacity:.4}
+.cal-drawer-header{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;gap:8px}
+.cal-drawer-header-title{font-size:14px;font-weight:700;color:var(--text);flex:1}
+.cal-drawer-close{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:16px;transition:all .12s}
+.cal-drawer-close:hover{background:var(--bg2);color:var(--text)}
+.cal-drawer-body{flex:1;overflow:hidden}
+.cal-drawer-body .gcal-wrap{border:0;border-radius:0}
+.cal-drawer-body .gcal-body{max-height:none;height:100%}
+
 /* ===== DETAIL PANEL ===== */
 .detail-inner{padding:20px;overflow-y:auto;flex:1}
 .detail-close{position:absolute;top:14px;right:14px;padding:4px;border-radius:4px;color:var(--text3);cursor:pointer}
@@ -598,6 +614,19 @@ textarea.form-input{resize:vertical;min-height:72px}
 
 <!-- TOAST CONTAINER -->
 <div class="toast-container" id="toastContainer"></div>
+
+<!-- FLOATING CALENDAR DRAWER -->
+<div class="cal-fab hidden" id="calFab" onclick="toggleCalDrawer()" title="カレンダーを表示">📅</div>
+<div class="cal-drawer" id="calDrawer">
+  <div class="cal-drawer-resize" id="calDrawerResize"></div>
+  <div class="cal-drawer-header">
+    <span class="cal-drawer-header-title">📅 カレンダー</span>
+    <button class="cal-drawer-close" onclick="toggleCalDrawer()">✕</button>
+  </div>
+  <div class="cal-drawer-body" id="calDrawerBody">
+    <div id="floatingCalGrid" style="height:100%;overflow:auto"></div>
+  </div>
+</div>
 
 <!-- MODALS (rendered dynamically) -->
 <div class="overlay" id="overlay" onclick="overlayClick(event)">
@@ -1542,8 +1571,8 @@ function doCalSlotAddLog(taskId,dateStr,startTime,endTime){
   showToast('稼働ログを追加しました');
 }
 
-function buildHomeWeekGrid(weekDaysParam, todayStrParam){
-  var grid=document.getElementById('homeWeekGrid');
+function buildHomeWeekGrid(weekDaysParam, todayStrParam, targetGridId){
+  var grid=document.getElementById(targetGridId||'homeWeekGrid');
   if(!grid) return;
 
   var todayStr=todayStrParam||today();
@@ -4716,6 +4745,150 @@ if(state.gcalConnected&&!_gcalAccessToken){
     }
   },1500);
 }
+
+// ============================================================
+// FLOATING CALENDAR DRAWER
+// ============================================================
+let _calDrawerOpen=false;
+var _floatingCalViewMode='week';
+var _floatingCalViewDate=null;
+
+function toggleCalDrawer(){
+  _calDrawerOpen=!_calDrawerOpen;
+  document.getElementById('calDrawer').classList.toggle('open',_calDrawerOpen);
+  if(_calDrawerOpen){
+    buildFloatingCalGrid();
+  }
+  updateCalFab();
+}
+
+function buildFloatingCalGrid(){
+  // Temporarily swap calendar state to use floating panel's own view state
+  var savedMode=_calViewMode;
+  var savedDate=_calViewDate;
+  _calViewMode=_floatingCalViewMode;
+  _calViewDate=_floatingCalViewDate;
+  buildHomeWeekGrid(null,null,'floatingCalGrid');
+  // Restore original state
+  _calViewMode=savedMode;
+  _calViewDate=savedDate;
+}
+
+// Override calNav/calToday/calSetMode to also update floating panel if open
+var _origCalNav=typeof calNav==='function'?calNav:null;
+var _origCalToday=typeof calToday==='function'?calToday:null;
+var _origCalSetMode=typeof calSetMode==='function'?calSetMode:null;
+
+function floatingCalNav(dir){
+  var d=new Date((_floatingCalViewDate||today())+'T00:00:00');
+  d.setDate(d.getDate()+(_floatingCalViewMode==='day'?dir:dir*7));
+  _floatingCalViewDate=localDateStr(d);
+  buildFloatingCalGrid();
+}
+function floatingCalToday(){
+  _floatingCalViewDate=null;
+  buildFloatingCalGrid();
+}
+function floatingCalSetMode(m){
+  _floatingCalViewMode=m;
+  buildFloatingCalGrid();
+}
+
+// Patch calNav/calToday/calSetMode so that when called from floating drawer context, they route correctly
+(function(){
+  var origCalNav=calNav;
+  calNav=function(dir){
+    // Check if the click originated from the floating drawer
+    if(_calDrawerOpen&&event&&event.target.closest('#calDrawer')){
+      floatingCalNav(dir);
+    } else {
+      origCalNav(dir);
+    }
+  };
+  var origCalToday=calToday;
+  calToday=function(){
+    if(_calDrawerOpen&&event&&event.target.closest('#calDrawer')){
+      floatingCalToday();
+    } else {
+      origCalToday();
+    }
+  };
+  var origCalSetMode=calSetMode;
+  calSetMode=function(m){
+    if(_calDrawerOpen&&event&&event.target.closest('#calDrawer')){
+      floatingCalSetMode(m);
+    } else {
+      origCalSetMode(m);
+    }
+  };
+  var origCalClickDay=calClickDay;
+  calClickDay=function(dateStr){
+    if(_calDrawerOpen&&event&&event.target.closest('#calDrawer')){
+      _floatingCalViewMode='day';_floatingCalViewDate=dateStr;
+      buildFloatingCalGrid();
+    } else {
+      origCalClickDay(dateStr);
+    }
+  };
+})();
+
+// Drawer width resize handle
+(function(){
+  var handle=document.getElementById('calDrawerResize');
+  var drawer=document.getElementById('calDrawer');
+  if(!handle||!drawer) return;
+  var dragging=false;
+  handle.addEventListener('mousedown',function(e){
+    e.preventDefault();dragging=true;
+    handle.classList.add('dragging');
+    document.body.style.cursor='col-resize';document.body.style.userSelect='none';
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging) return;
+    var w=Math.max(320,Math.min(window.innerWidth-200,e.clientX));
+    drawer.style.width=w+'px';
+  });
+  document.addEventListener('mouseup',function(){
+    if(!dragging) return;
+    dragging=false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor='';document.body.style.userSelect='';
+    // Re-render calendar to fit new width
+    if(_calDrawerOpen) buildFloatingCalGrid();
+  });
+})();
+
+// Close drawer on Escape key
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&_calDrawerOpen) toggleCalDrawer();
+});
+// Close drawer when clicking outside
+document.addEventListener('mousedown',function(e){
+  if(!_calDrawerOpen) return;
+  if(e.target.closest('#calDrawer')||e.target.closest('#calFab')) return;
+  toggleCalDrawer();
+});
+
+function updateCalFab(){
+  var fab=document.getElementById('calFab');
+  if(!fab) return;
+  // Hide on calplan page (calendar already visible there)
+  fab.classList.toggle('hidden',ui.view==='calplan');
+}
+// Hook into renderContent to update FAB visibility
+var _origRenderContent=renderContent;
+renderContent=function(){
+  _origRenderContent();
+  updateCalFab();
+};
+// Also close drawer when navigating to calplan
+var _origNavTo=navTo;
+navTo=function(view,cid,pid,tid,el){
+  if(view==='calplan'&&_calDrawerOpen){
+    toggleCalDrawer();
+  }
+  _origNavTo(view,cid,pid,tid,el);
+};
 </script>
 </body>
 </html>
