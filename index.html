@@ -1349,6 +1349,7 @@ function renderHome(c){
       '<button class="btn btn-ghost btn-sm" onclick="navTo(\'calplan\',null,null,null,document.getElementById(\'nav-calplan\'))">📅 カレンダー計画</button>'+
       '<button class="btn btn-ghost btn-sm" onclick="navTo(\'today\',null,null,null,document.getElementById(\'nav-today\'))">⚡ 今日のアクション</button>'+
       '<button class="btn btn-ghost btn-sm" onclick="openAddTask()">＋ タスク追加</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="openCsvExport()">📊 CSV出力</button>'+
     '</div></div>';
   h+='<div class="home-stats">'+
     chip('blue',total-done,'残タスク',"navTo('all',null,null,null,document.getElementById('nav-all'))")+
