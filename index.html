@@ -5018,10 +5018,10 @@ function floatingCalSetMode(m){
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'&&_calDrawerOpen) toggleCalDrawer();
 });
-// Close drawer when clicking outside
+// Close drawer when clicking outside (except detail panel and modals)
 document.addEventListener('mousedown',function(e){
   if(!_calDrawerOpen) return;
-  if(e.target.closest('#calDrawer')||e.target.closest('#calFab')) return;
+  if(e.target.closest('#calDrawer')||e.target.closest('#calFab')||e.target.closest('#detailPanel')||e.target.closest('#overlay')) return;
   toggleCalDrawer();
 });
 
