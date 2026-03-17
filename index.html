@@ -812,22 +812,8 @@ async function advanceRecurringTask(task,company,project){
   const baseDate=task.actionDate||today();
   const nextDate=getNextRecurrenceDate(rec,baseDate);
   if(!nextDate) return;
-  // Delete old GCal events before advancing
-  const calId=getTaskCalId(task);
-  if(state.gcalConnected){
-    if(task.gcalEventId){
-      try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventId,{method:'DELETE'});}catch(e){console.warn('[Recur] delete old action event failed:',e);}
-    }
-    if(task.gcalEventIdDue){
-      try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventIdDue,{method:'DELETE'});}catch(e){console.warn('[Recur] delete old due event failed:',e);}
-    }
-    // Delete old action log GCal events
-    for(const log of (task.actionLogs||[])){
-      if(log.gcalEventId){
-        try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+log.gcalEventId,{method:'DELETE'});}catch(e){}
-      }
-    }
-  }
+  // Keep old GCal events (don't delete) so completed tasks remain on Google Calendar
+  // Just clear the event IDs from the task so new events are created for the next occurrence
   // Reset task for next occurrence
   task.status='todo';
   task.actionDate=nextDate;
@@ -1526,7 +1512,7 @@ function calClickSlot(dateStr,hour){
 }
 var _calSlotMode='log'; // 'log' or 'action'
 function openCalSlotAction(dateStr,startTime,endTime){
-  var all=getAllTasks().filter(function(t){return t.status!=='done';});
+  var all=getAllTasks();
   if(!all.length){showToast('タスクがありません','error');return;}
   var html='<div class="modal-title">📅 '+dateStr+' '+startTime+'〜'+endTime+'<span class="modal-close" onclick="closeModal()">✕</span></div>';
   html+='<div style="display:flex;gap:4px;margin-bottom:12px;background:var(--bg2);border-radius:var(--radius-sm);padding:2px">';
@@ -1539,9 +1525,10 @@ function openCalSlotAction(dateStr,startTime,endTime){
     var onclick=_calSlotMode==='log'
       ?'doCalSlotAddLog(\''+t.id+'\',\''+dateStr+'\',\''+startTime+'\',\''+endTime+'\')'
       :'doCalSlotSetAction(\''+t.id+'\',\''+dateStr+'\',\''+startTime+'\',\''+endTime+'\')';
-    html+='<div class="home-task-row" style="cursor:pointer" onclick="'+onclick+'">'+
+    var isDone=t.status==='done';
+    html+='<div class="home-task-row" style="cursor:pointer'+(isDone?';opacity:0.55':'')+'" onclick="'+onclick+'">'+
       '<div style="width:7px;height:7px;border-radius:50%;background:'+(t.companyColor||'var(--accent)')+';flex-shrink:0"></div>'+
-      '<div style="flex:1;min-width:0"><div style="font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.title)+'</div>'+
+      '<div style="flex:1;min-width:0"><div style="font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'+(isDone?';text-decoration:line-through':'')+'">'+( isDone?'✓ ':'')+esc(t.title)+'</div>'+
       '<div style="font-size:11px;color:var(--text3)">'+esc(t.companyName||'')+' · '+esc(t.projectName||'')+'</div></div>'+
       (t.actionDate?'<span style="font-size:10px;color:var(--text3)">★'+t.actionDate.slice(5)+'</span>':'')+
     '</div>';
@@ -2203,11 +2190,12 @@ function buildCalplanTaskList(){
   const todayStr=today();
   const weekEnd=addDays(todayStr,7-new Date(todayStr+'T00:00:00').getDay());
   const nextWeekEnd=addDays(weekEnd,7);
-  let all=getAllTasks().filter(t=>t.status!=='done');
+  let all=getAllTasks();
   // Apply filter
   if(_calplanFilter==='unset') all=all.filter(t=>!t.actionDate);
   else if(_calplanFilter==='thisweek') all=all.filter(t=>t.actionDate&&t.actionDate>=todayStr&&t.actionDate<=weekEnd);
   else if(_calplanFilter==='nextweek') all=all.filter(t=>t.actionDate&&t.actionDate>weekEnd&&t.actionDate<=nextWeekEnd);
+  else if(_calplanFilter==='done') all=all.filter(t=>t.status==='done');
 
   const cals=state.gcalCalendars||[];
   const hasCals=cals.length>0;
@@ -2218,6 +2206,7 @@ function buildCalplanTaskList(){
   h+=calplanFilterBtn('unset','未設定');
   h+=calplanFilterBtn('thisweek','今週');
   h+=calplanFilterBtn('nextweek','来週');
+  h+=calplanFilterBtn('done','完了済');
   h+='</div>';
   h+='<span style="font-size:11px;color:var(--text3);margin-left:auto">'+all.length+'件</span>';
   h+='</div>';
@@ -2240,10 +2229,11 @@ function buildCalplanTaskList(){
     for(const t of g.tasks){
       const priIcon={high:'🔴',med:'🟡',low:'🟢'}[t.priority]||'';
       const statusColor={todo:'var(--text3)',doing:'var(--accent)',done:'var(--green)'}[t.status]||'var(--text3)';
-      h+='<div class="calplan-task">';
+      const isDone=t.status==='done';
+      h+='<div class="calplan-task"'+(isDone?' style="opacity:0.55"':'')+'>';
       h+='<div class="calplan-status" style="background:'+statusColor+'" title="'+({todo:'未着手',doing:'進行中',done:'完了'}[t.status]||'')+'"></div>';
       h+='<div class="calplan-pri">'+priIcon+'</div>';
-      h+='<div class="calplan-task-title" onclick="selectTask(\''+t.id+'\')" title="'+esc(t.title)+'">'+esc(t.title)+'</div>';
+      h+='<div class="calplan-task-title" onclick="selectTask(\''+t.id+'\')" title="'+esc(t.title)+'"'+(isDone?' style="text-decoration:line-through"':'')+'>'+esc(t.title)+'</div>';
       h+='<div class="calplan-dates">';
       h+='<span style="font-size:10px;color:var(--accent);font-weight:700" title="アクション日">★</span>';
       h+='<input type="date" value="'+(t.actionDate||'')+'" onchange="calplanSetDate(\''+t.id+'\',\'actionDate\',this.value)" title="アクション日">';
@@ -2969,14 +2959,8 @@ async function syncGcalByMode(task,company,project){
   const mode=task.gcalMode||'action';
   const calId=getTaskCalId(task);
   const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
-  // Delete old events if they exist
-  if(task.gcalEventId){
-    try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventId,{method:'DELETE'});}catch(e){}
-  }
-  if(task.gcalEventIdDue){
-    try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventIdDue,{method:'DELETE'});}catch(e){}
-  }
-  const updates={gcalEventId:'',gcalEventIdDue:''};
+  // Update existing events (PATCH) or create new ones (POST) — never delete
+  const updates={gcalEventId:task.gcalEventId||'',gcalEventIdDue:task.gcalEventIdDue||''};
   try{
     // Action date event
     if((mode==='action'||mode==='both')&&task.actionDate){
@@ -2991,17 +2975,36 @@ async function syncGcalByMode(task,company,project){
       }else{
         ev.start={date:task.actionDate};ev.end={date:addDays(task.actionDate,1)};
       }
-      // Note: No RRULE — Stride manages recurrence internally, GCal gets single events
-      const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
-      updates.gcalEventId=created.id;
+      if(task.gcalEventId){
+        // Update existing event
+        try{
+          await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventId,{method:'PATCH',body:JSON.stringify(ev)});
+        }catch(e){
+          // If PATCH fails (event deleted externally), create new
+          const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
+          updates.gcalEventId=created.id;
+        }
+      }else{
+        const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
+        updates.gcalEventId=created.id;
+      }
     }
     // Due date event
     if((mode==='due'||mode==='both')&&(task.dueDate||task.startDate)){
       const ev={summary:'📅 ['+company.name+'] '+task.title,description:project.name+': '+(task.note||'')};
       ev.start=task.startDate?{date:task.startDate}:{date:task.dueDate};
       ev.end=task.dueDate?{date:addDays(task.dueDate,1)}:{date:addDays(task.startDate,1)};
-      const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
-      updates.gcalEventIdDue=created.id;
+      if(task.gcalEventIdDue){
+        try{
+          await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventIdDue,{method:'PATCH',body:JSON.stringify(ev)});
+        }catch(e){
+          const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
+          updates.gcalEventIdDue=created.id;
+        }
+      }else{
+        const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(ev)});
+        updates.gcalEventIdDue=created.id;
+      }
     }
     updateTask(task.id,updates);
     showToast('📅 Googleカレンダーに登録しました');
