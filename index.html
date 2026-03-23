@@ -2417,17 +2417,63 @@ async function syncExistingTodosToGcal(taskId){
   if(!r.task.actionLogs) r.task.actionLogs=[];
   let synced=0;
   for(const td of (r.task.todos||[])){
-    if(!td.actionDate) continue; // 日程なしはスキップ
-    const existing=r.task.actionLogs.find(l=>l.linkedTodoId===td.id);
-    if(existing) continue; // 既にリンク済みはスキップ
-    // リンクアクションログを作成してGCal同期
-    const linkedLog={id:uid(),date:td.actionDate,startTime:td.actionStartTime||'',endTime:td.actionEndTime||'',gcalEventId:'',linkedTodoId:td.id,linkedTodoText:td.text};
-    r.task.actionLogs.push(linkedLog);
-    save();
-    await syncActionLogToGcal(r,linkedLog);
+    if(!td.actionDate) continue;
+    let linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===td.id);
+    if(!linkedLog){
+      // アクションログがなければ作成
+      linkedLog={id:uid(),date:td.actionDate,startTime:td.actionStartTime||'',endTime:td.actionEndTime||'',gcalEventId:'',linkedTodoId:td.id,linkedTodoText:td.text};
+      r.task.actionLogs.push(linkedLog);
+      save();
+    } else {
+      // 既存ログの日付・時間・テキストを最新TODOの値に更新
+      linkedLog.date=td.actionDate;
+      linkedLog.startTime=td.actionStartTime||'';
+      linkedLog.endTime=td.actionEndTime||'';
+      linkedLog.linkedTodoText=td.text;
+      save();
+    }
+    // GCal未登録 or タイトル更新のため常に同期
+    if(state.gcalConnected) await syncActionLogToGcal(r,linkedLog);
     synced++;
   }
   if(synced>0) renderDetail(taskId);
+}
+
+// 全タスクのTODO日程をGCalに一括チェック＆同期
+async function syncAllTodosGcalGlobal(){
+  if(!state.gcalConnected){showToast('先にGoogleカレンダーを連携してください','error');return;}
+  let total=0,done=0;
+  // カウント
+  for(const c of state.companies)for(const p of c.projects)for(const t of p.tasks){
+    total+=(t.todos||[]).filter(td=>td.actionDate).length;
+  }
+  if(total===0){showToast('日程が設定されたTODOはありません');return;}
+  showToast('🔄 TODO日程をGCalに同期中... (0/'+total+')');
+  for(const c of state.companies)for(const p of c.projects)for(const t of p.tasks){
+    const r={task:t,company:c,project:p};
+    if(!t.actionLogs) t.actionLogs=[];
+    for(const td of (t.todos||[])){
+      if(!td.actionDate) continue;
+      let linkedLog=t.actionLogs.find(l=>l.linkedTodoId===td.id);
+      if(!linkedLog){
+        linkedLog={id:uid(),date:td.actionDate,startTime:td.actionStartTime||'',endTime:td.actionEndTime||'',gcalEventId:'',linkedTodoId:td.id,linkedTodoText:td.text};
+        t.actionLogs.push(linkedLog);
+        save();
+      } else {
+        linkedLog.date=td.actionDate;
+        linkedLog.startTime=td.actionStartTime||'';
+        linkedLog.endTime=td.actionEndTime||'';
+        linkedLog.linkedTodoText=td.text;
+        save();
+      }
+      await syncActionLogToGcal(r,linkedLog);
+      done++;
+      if(done%5===0) showToast('🔄 TODO日程をGCalに同期中... ('+done+'/'+total+')');
+    }
+  }
+  showToast('✅ '+done+'件のTODO日程をGoogleカレンダーに同期しました');
+  await fetchGcalEvents();
+  renderAll();
 }
 
 // ============================================================
@@ -4104,7 +4150,7 @@ function buildIntegrations(){
     ${state.gcalConnected&&!_gcalAccessToken?'<div style="margin-top:6px;font-size:11px;color:var(--accent4)">⚠ セッション切れ — 再接続が必要です</div>':''}
     <div class="int-actions">
       ${state.gcalConnected
-        ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGcal()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGcal()">🔄 イベント更新</button>`
+        ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGcal()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGcal()">🔄 イベント更新</button><button class="btn btn-ghost btn-sm" style="color:var(--accent3)" onclick="syncAllTodosGcalGlobal()">📌 TODO日程を一括同期</button>`
         :`<button class="btn btn-primary btn-sm" onclick="doConnectGcal()">📅 カレンダーと連携する</button>`}
     </div>
   </div>
