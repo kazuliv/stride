@@ -812,8 +812,16 @@ async function advanceRecurringTask(task,company,project){
   const baseDate=task.actionDate||today();
   const nextDate=getNextRecurrenceDate(rec,baseDate);
   if(!nextDate) return;
-  // Keep old GCal events (don't delete) so completed tasks remain on Google Calendar
-  // Just clear the event IDs from the task so new events are created for the next occurrence
+  // Delete old GCal events before creating new ones to prevent duplicates
+  if(state.gcalConnected&&_gcalAccessToken){
+    const calId=getTaskCalId(task);
+    if(task.gcalEventId){
+      try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventId,{method:'DELETE'});}catch(e){console.error('GCal delete old action event:',e);}
+    }
+    if(task.gcalEventIdDue){
+      try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventIdDue,{method:'DELETE'});}catch(e){console.error('GCal delete old due event:',e);}
+    }
+  }
   // Reset task for next occurrence
   task.status='todo';
   task.actionDate=nextDate;
@@ -3933,7 +3941,7 @@ function getRecurrenceFromModal(){
   return rec;
 }
 
-function doSaveRecurrence(taskId){
+async function doSaveRecurrence(taskId){
   const r=getTask(taskId);if(!r)return;
   const rec=getRecurrenceFromModal();
   rec.lastGenerated=today();
@@ -3941,7 +3949,13 @@ function doSaveRecurrence(taskId){
   save();closeModal();
   renderDetail(taskId);renderAll();
   // Sync to Google Calendar with RRULE if connected
+  // Delete old recurring event first to prevent duplicates
   if(r.task.gcal&&state.gcalConnected){
+    if(r.task.gcalEventId&&_gcalAccessToken){
+      const calId=getTaskCalId(r.task);
+      try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+r.task.gcalEventId,{method:'DELETE'});}catch(e){}
+      r.task.gcalEventId='';
+    }
     createGcalRecurringEvent(r.task,r.company,r.project);
   }
   showToast('🔄 定期タスクを設定しました: '+recurrenceLabel(rec));
