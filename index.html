@@ -2407,6 +2407,27 @@ function selectTask(id){
   ui.selectedTaskId=id;
   try{renderContent();}catch(e){console.error('renderContent error:',e);}
   try{renderDetail(id);}catch(e){console.error('renderDetail error:',e);}
+  // GCal連携済みの場合、日程が設定されているがGCal未登録のTODOを自動同期
+  if(state.gcalConnected) syncExistingTodosToGcal(id);
+}
+
+// 既存のTODO日程をGCalに一括反映（リンクアクションログが未作成のものを対象）
+async function syncExistingTodosToGcal(taskId){
+  const r=getTask(taskId);if(!r)return;
+  if(!r.task.actionLogs) r.task.actionLogs=[];
+  let synced=0;
+  for(const td of (r.task.todos||[])){
+    if(!td.actionDate) continue; // 日程なしはスキップ
+    const existing=r.task.actionLogs.find(l=>l.linkedTodoId===td.id);
+    if(existing) continue; // 既にリンク済みはスキップ
+    // リンクアクションログを作成してGCal同期
+    const linkedLog={id:uid(),date:td.actionDate,startTime:td.actionStartTime||'',endTime:td.actionEndTime||'',gcalEventId:'',linkedTodoId:td.id,linkedTodoText:td.text};
+    r.task.actionLogs.push(linkedLog);
+    save();
+    await syncActionLogToGcal(r,linkedLog);
+    synced++;
+  }
+  if(synced>0) renderDetail(taskId);
 }
 
 // ============================================================
@@ -2632,7 +2653,7 @@ function renderDetail(id){
     <div class="detail-label">Todo (${doneCount}/${totalCount})</div>
     <div id="det-todos">${renderDetailTodos(t)}</div>
     <div class="todo-add-row">
-      <input class="todo-add-input" id="det-todo-input" placeholder="＋ Todoを追加..." onkeydown="if(event.key==='Enter')addTodo('${id}')">
+      <input class="todo-add-input" id="det-todo-input" placeholder="＋ Todoを追加..." autocomplete="off" onkeydown="if(event.key==='Enter'&&!event.isComposing)addTodo('${id}')">
       <button class="btn btn-ghost btn-sm" onclick="addTodo('${id}')">追加</button>
     </div>
   </div>
@@ -2977,9 +2998,12 @@ function addTodo(taskId){
   const text=inp?.value.trim();if(!text)return;
   const r=getTask(taskId);if(!r)return;
   r.task.todos.push({id:uid(),text,done:false});
-  inp.value='';save();
+  save();
   document.getElementById('det-todos').innerHTML=renderDetailTodos(r.task);
   renderAll();
+  // 追加後はinputをクリアしてフォーカスを戻す
+  const inp2=document.getElementById('det-todo-input');
+  if(inp2){inp2.value='';inp2.focus();}
 }
 function toggleTodo(taskId,todoId){
   const r=getTask(taskId);if(!r)return;
