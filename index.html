@@ -2468,21 +2468,30 @@ async function syncAllTodosGcalGlobal(){
         linkedLog.linkedTodoText=td.text;
       }
       save();
+      const calId=decodeURIComponent(getTaskCalId(t));
+      console.log('[bulkSync] Syncing TODO:',td.text,'| date:',td.actionDate,'| cal:',calId,'| existingEventId:',linkedLog.gcalEventId||'(none)');
       try{
-        // skipFetch:trueで個別fetch不要、最後にまとめてfetch
-        await syncActionLogToGcal(r,linkedLog,{skipFetch:true,silent:true});
-        done++;
+        await syncActionLogToGcal(r,linkedLog,{skipFetch:true});
+        // GCalイベントIDが実際に設定されたか確認
+        if(linkedLog.gcalEventId){
+          console.log('[bulkSync] ✅ Created/Updated:',linkedLog.gcalEventId,'for',td.text);
+          done++;
+        }else{
+          console.warn('[bulkSync] ⚠️ No event ID after sync for:',td.text,'— event may not have been created');
+          failed++;
+        }
       }catch(e){
-        console.error('[bulkSync] Failed:',td.text,'in',t.title,e.message);
+        console.error('[bulkSync] ❌ Failed:',td.text,'in',t.title,'|',e.message);
+        showToast('❌ 同期失敗: '+td.text+' ('+e.message+')','error');
         failed++;
       }
-      if((done+failed)%5===0) showToast('🔄 TODO日程をGCalに同期中... ('+(done+failed)+'/'+total+')');
+      if((done+failed)%3===0) showToast('🔄 TODO日程をGCalに同期中... ('+(done+failed)+'/'+total+')');
     }
   }
   await fetchGcalEvents();
   renderAll();
   if(failed>0){
-    showToast('✅ '+done+'件同期完了（'+failed+'件失敗）','error');
+    showToast('⚠️ '+done+'件同期済み・'+failed+'件失敗 — ブラウザのコンソールで詳細を確認してください','error');
   }else{
     showToast('✅ '+done+'件のTODO日程をGoogleカレンダーに同期しました');
   }
