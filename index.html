@@ -2715,6 +2715,8 @@ function setTodoActionDate(taskId,todoId,date){
       r.task.actionLogs.push(linkedLog);
     }else{
       linkedLog.date=date;
+      linkedLog.startTime=td.actionStartTime||'';
+      linkedLog.endTime=td.actionEndTime||'';
       linkedLog.linkedTodoText=td.text;
     }
     save();
@@ -2739,7 +2741,9 @@ function setTodoActionTime(taskId,todoId,field,value){
   if(r.task.actionLogs){
     const linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
     if(linkedLog){
-      linkedLog[field]=value;
+      // TODOのフィールド名(actionStartTime/actionEndTime)をログのフィールド名(startTime/endTime)にマップ
+      const logField=field==='actionStartTime'?'startTime':field==='actionEndTime'?'endTime':field;
+      linkedLog[logField]=value;
       save();
       if(state.gcalConnected&&td.actionDate) syncActionLogToGcal(r,linkedLog);
     }
