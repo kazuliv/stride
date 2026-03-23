@@ -2685,23 +2685,24 @@ function setTodoActionDate(taskId,todoId,date){
   const oldDate=td.actionDate||'';
   td.actionDate=date;
   save();updateBadges();
-  if(state.gcalConnected&&date){
-    syncTodoToGcal(r,td);
-  } else if(state.gcalConnected&&!date&&oldDate&&td.gcalEventId){
-    deleteTodoFromGcal(td,r.task);
-  }
-  // Auto-manage linked action log: create/update when date is set, remove when cleared
+  // アクションログ経由でGCal同期（1イベントのみ）
   if(!r.task.actionLogs) r.task.actionLogs=[];
   if(date){
     let linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
     if(!linkedLog){
-      linkedLog={id:uid(),date:date,startTime:td.actionStartTime||'',endTime:td.actionEndTime||'',gcalEventId:'',linkedTodoId:todoId};
+      linkedLog={id:uid(),date:date,startTime:td.actionStartTime||'',endTime:td.actionEndTime||'',gcalEventId:'',linkedTodoId:todoId,linkedTodoText:td.text};
       r.task.actionLogs.push(linkedLog);
     }else{
       linkedLog.date=date;
+      linkedLog.linkedTodoText=td.text;
     }
     save();
+    if(state.gcalConnected) syncActionLogToGcal(r,linkedLog);
   }else if(!date&&oldDate){
+    const linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
+    if(linkedLog&&linkedLog.gcalEventId&&state.gcalConnected){
+      deleteActionLogFromGcal(linkedLog,r.task);
+    }
     r.task.actionLogs=r.task.actionLogs.filter(l=>l.linkedTodoId!==todoId);
     save();
   }
@@ -2713,13 +2714,14 @@ function setTodoActionTime(taskId,todoId,field,value){
   const td=r.task.todos.find(x=>x.id===todoId);if(!td)return;
   td[field]=value;
   save();
-  if(state.gcalConnected&&td.actionDate){
-    syncTodoToGcal(r,td);
-  }
-  // Sync time to linked action log
+  // アクションログを更新してGCal同期
   if(r.task.actionLogs){
     const linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
-    if(linkedLog){linkedLog[field]=value;save();}
+    if(linkedLog){
+      linkedLog[field]=value;
+      save();
+      if(state.gcalConnected&&td.actionDate) syncActionLogToGcal(r,linkedLog);
+    }
   }
   if(ui.selectedTaskId===taskId) renderDetail(taskId);
 }
@@ -2840,8 +2842,8 @@ function updateActionLog(taskId,logId,field,value){
   if(!log)return;
   log[field]=value;
   save();
-  // Sync to GCal immediately when all fields are filled (skip if linked to a TODO — TODO's gcal event covers it)
-  if(!log.linkedTodoId&&log.date&&log.startTime&&log.endTime&&state.gcalConnected){
+  // GCal同期: 日付が設定されていれば同期（連携ログも対象）
+  if(log.date&&state.gcalConnected){
     console.log('[ActionLog] Syncing to GCal:', log.date, log.startTime, log.endTime);
     syncActionLogToGcal(r,log);
   }
@@ -2866,28 +2868,40 @@ function removeActionLog(taskId,logId){
 }
 
 async function syncActionLogToGcal(r,log){
-  if(!log.date||!log.startTime||!log.endTime) return;
+  if(!log.date) return;
   const calId=getTaskCalId(r.task);
   const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const startDT=log.date+'T'+log.startTime+':00';
-  const endDT=log.date+'T'+log.endTime+':00';
+  // TODOと連携しているログはTODOのテキストをsummaryに使用
+  const summary=log.linkedTodoText
+    ?'★ '+log.linkedTodoText+' ('+r.task.title+')'
+    :'★ ['+r.company.name+'] '+r.task.title+' (ログ)';
   const event={
-    summary:'★ ['+r.company.name+'] '+r.task.title+' (ログ)',
+    summary:summary,
     description:r.project.name+': '+(r.task.note||''),
-    start:{dateTime:startDT,timeZone:tz},
-    end:{dateTime:endDT,timeZone:tz},
   };
-  console.log('[ActionLog→GCal] calId='+calId+' start='+startDT+' end='+endDT+' existing='+log.gcalEventId);
+  // 時間が設定されていれば時間指定イベント、なければ終日イベント
+  if(log.startTime&&log.endTime){
+    event.start={dateTime:log.date+'T'+log.startTime+':00',timeZone:tz};
+    event.end={dateTime:log.date+'T'+log.endTime+':00',timeZone:tz};
+  }else if(log.startTime){
+    const endT=log.startTime.split(':');const eH=parseInt(endT[0])+1;
+    event.start={dateTime:log.date+'T'+log.startTime+':00',timeZone:tz};
+    event.end={dateTime:log.date+'T'+String(eH).padStart(2,'0')+':'+endT[1]+':00',timeZone:tz};
+  }else{
+    event.start={date:log.date};
+    event.end={date:addDays(log.date,1)};
+  }
+  console.log('[ActionLog→GCal] calId='+calId+' date='+log.date+' existing='+log.gcalEventId);
   try{
     if(log.gcalEventId){
       await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+log.gcalEventId,{method:'PATCH',body:JSON.stringify(event)});
-      showToast('📅 アクションログのカレンダー予定を更新しました');
+      showToast(log.linkedTodoText?'📅 TodoのGCal予定を更新しました':'📅 アクションログのカレンダー予定を更新しました');
     }else{
       const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(event)});
       if(created&&created.id){
         log.gcalEventId=created.id;save();
         console.log('[ActionLog→GCal] Created event:', created.id);
-        showToast('📅 アクションログをカレンダーに登録しました');
+        showToast(log.linkedTodoText?'📅 TodoをGoogleカレンダーに登録しました':'📅 アクションログをカレンダーに登録しました');
       }
     }
     await fetchGcalEvents();
@@ -2974,11 +2988,10 @@ function toggleTodo(taskId,todoId){
 }
 function deleteTodo(taskId,todoId){
   const r=getTask(taskId);if(!r)return;
-  // Delete GCal event for this todo if it exists
-  const td=r.task.todos.find(x=>x.id===todoId);
-  if(td&&td.gcalEventId&&state.gcalConnected) deleteTodoFromGcal(td,r.task);
-  // Remove linked action log
+  // 連携アクションログのGCalイベントを削除してからログを削除
   if(r.task.actionLogs){
+    const linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
+    if(linkedLog&&linkedLog.gcalEventId&&state.gcalConnected) deleteActionLogFromGcal(linkedLog,r.task);
     r.task.actionLogs=r.task.actionLogs.filter(l=>l.linkedTodoId!==todoId);
   }
   r.task.todos=r.task.todos.filter(x=>x.id!==todoId);
