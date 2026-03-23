@@ -2978,26 +2978,38 @@ async function syncActionLogToGcal(r,log,opts={}){
   }else{
     event.start={date:log.date};event.end={date:addDays(log.date,1)};
   }
-  console.log('[ActionLog→GCal] calId='+calId+' date='+log.date+' existing='+log.gcalEventId);
+  const decodedCalId=decodeURIComponent(calId);
+  console.log('[ActionLog→GCal] cal='+decodedCalId+' date='+log.date+' time='+(log.startTime||'allday')+' existing='+log.gcalEventId+' event='+JSON.stringify(event));
   try{
     if(log.gcalEventId){
       try{
-        await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+log.gcalEventId,{method:'PATCH',body:JSON.stringify(event)});
+        const patched=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+log.gcalEventId,{method:'PATCH',body:JSON.stringify(event)});
+        console.log('[ActionLog→GCal] PATCH ok id='+log.gcalEventId+(patched&&patched.htmlLink?' link='+patched.htmlLink:''));
         if(!opts.silent) showToast(log.linkedTodoText?'📅 TodoのGCal予定を更新しました':'📅 アクションログのカレンダー予定を更新しました');
       }catch(patchErr){
-        // PATCHが失敗（イベント削除済み等）した場合は新規作成
-        console.warn('[ActionLog→GCal] PATCH failed, retrying as POST:', patchErr.message);
+        console.warn('[ActionLog→GCal] PATCH failed ('+patchErr.message+'), retrying as POST');
         log.gcalEventId='';
         const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(event)});
-        if(created&&created.id){log.gcalEventId=created.id;save();}
+        if(created&&created.id){
+          log.gcalEventId=created.id;save();
+          console.log('[ActionLog→GCal] Re-created id='+created.id+' link='+created.htmlLink);
+        }else{
+          console.error('[ActionLog→GCal] POST (fallback) returned no id:', created);
+          if(!opts.silent) showToast('⚠️ GCal登録応答にIDがありません。コンソールを確認してください','error');
+          return;
+        }
         if(!opts.silent) showToast(log.linkedTodoText?'📅 TodoをGoogleカレンダーに登録しました':'📅 アクションログをカレンダーに登録しました');
       }
     }else{
       const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(event)});
       if(created&&created.id){
         log.gcalEventId=created.id;save();
-        console.log('[ActionLog→GCal] Created event:', created.id);
+        console.log('[ActionLog→GCal] Created id='+created.id+' link='+created.htmlLink+' cal='+decodedCalId);
         if(!opts.silent) showToast(log.linkedTodoText?'📅 TodoをGoogleカレンダーに登録しました':'📅 アクションログをカレンダーに登録しました');
+      }else{
+        console.error('[ActionLog→GCal] POST returned no id:', JSON.stringify(created));
+        if(!opts.silent) showToast('⚠️ GCal登録応答にIDがありません (cal='+decodedCalId+')','error');
+        return;
       }
     }
     if(!opts.skipFetch){
@@ -4598,18 +4610,14 @@ function syncGcalChangesToStride(eventsById){
             t.actionDate=evDate;
             changed=true;
           }
-          // Sync start time if dateTime event
+          // Sync start/end time if dateTime event
           if(ev.start&&ev.start.length>10){
             const evStartTime=ev.start.slice(11,16);
-            if(evStartTime&&t.actionStartTime&&evStartTime!==t.actionStartTime){
-              t.actionStartTime=evStartTime;changed=true;
-            }
+            if(evStartTime&&evStartTime!==t.actionStartTime){t.actionStartTime=evStartTime;changed=true;}
           }
           if(ev.end&&ev.end.length>10){
             const evEndTime=ev.end.slice(11,16);
-            if(evEndTime&&t.actionEndTime&&evEndTime!==t.actionEndTime){
-              t.actionEndTime=evEndTime;changed=true;
-            }
+            if(evEndTime&&evEndTime!==t.actionEndTime){t.actionEndTime=evEndTime;changed=true;}
           }
         }
         // Check due date event (gcalEventIdDue)
@@ -4636,16 +4644,16 @@ function syncGcalChangesToStride(eventsById){
               const ev=eventsById[td.gcalEventId];
               const evDate=(ev.start||'').slice(0,10);
               if(evDate&&td.actionDate&&evDate!==td.actionDate){
-                console.log('[GCal Sync] Todo "'+td.text+'" date: '+td.actionDate+' → '+evDate);
+                console.log('[GCal→Stride] Todo "'+td.text+'" date: '+td.actionDate+' → '+evDate);
                 td.actionDate=evDate;changed=true;
               }
               if(ev.start&&ev.start.length>10){
                 const st=ev.start.slice(11,16);
-                if(st&&td.actionStartTime&&st!==td.actionStartTime){td.actionStartTime=st;changed=true;}
+                if(st&&st!==td.actionStartTime){td.actionStartTime=st;changed=true;}
               }
               if(ev.end&&ev.end.length>10){
                 const et=ev.end.slice(11,16);
-                if(et&&td.actionEndTime&&et!==td.actionEndTime){td.actionEndTime=et;changed=true;}
+                if(et&&et!==td.actionEndTime){td.actionEndTime=et;changed=true;}
               }
             }
           }
@@ -4656,14 +4664,27 @@ function syncGcalChangesToStride(eventsById){
             if(log.gcalEventId&&eventsById[log.gcalEventId]){
               const ev=eventsById[log.gcalEventId];
               const evDate=(ev.start||'').slice(0,10);
-              if(evDate&&log.date&&evDate!==log.date){log.date=evDate;changed=true;}
+              let logChanged=false;
+              if(evDate&&log.date&&evDate!==log.date){
+                console.log('[GCal→Stride] Log date: '+log.date+' → '+evDate+(log.linkedTodoText?' (TODO: '+log.linkedTodoText+')':''));
+                log.date=evDate;changed=true;logChanged=true;
+              }
               if(ev.start&&ev.start.length>10){
                 const st=ev.start.slice(11,16);
-                if(st&&log.startTime&&st!==log.startTime){log.startTime=st;changed=true;}
+                if(st&&st!==log.startTime){log.startTime=st;changed=true;logChanged=true;}
               }
               if(ev.end&&ev.end.length>10){
                 const et=ev.end.slice(11,16);
-                if(et&&log.endTime&&et!==log.endTime){log.endTime=et;changed=true;}
+                if(et&&et!==log.endTime){log.endTime=et;changed=true;logChanged=true;}
+              }
+              // GCal変更をリンクされたTODOにも反映
+              if(logChanged&&log.linkedTodoId&&t.todos){
+                const linkedTodo=t.todos.find(td=>td.id===log.linkedTodoId);
+                if(linkedTodo){
+                  if(evDate) linkedTodo.actionDate=log.date;
+                  if(log.startTime) linkedTodo.actionStartTime=log.startTime;
+                  if(log.endTime) linkedTodo.actionEndTime=log.endTime;
+                }
               }
             }
           }
