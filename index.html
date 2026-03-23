@@ -2898,7 +2898,7 @@ async function syncActionLogToGcal(r,log){
   const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
   // TODOと連携しているログはTODOのテキストをsummaryに使用
   const summary=log.linkedTodoText
-    ?'★ '+log.linkedTodoText+' ('+r.task.title+')'
+    ?'★ '+log.linkedTodoText+'（'+r.task.title+'）'
     :'★ ['+r.company.name+'] '+r.task.title+' (ログ)';
   const event={
     summary:summary,
