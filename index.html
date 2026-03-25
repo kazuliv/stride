@@ -4220,18 +4220,27 @@ function buildIntegrations(){
       </div>
       <div class="int-status ${state.gcalConnected?'ok':'no'}">${state.gcalConnected?'✓ 連携中':'未連携'}</div>
     </div>
-    <div class="int-desc">タスクに開始日・締め切りを設定すると、Googleカレンダーに期間イベントとして自動登録されます。Google OAuth2認証を使用します。</div>
+    <div class="int-desc">タスクのTODOやアクションログの日程をGoogleカレンダーに登録できます。Google OAuth2認証を使用します。</div>
     ${!GCAL_CLIENT_ID?'<div style="margin-top:8px;padding:8px 10px;background:#fffbef;border:1px solid #f5e4b0;border-radius:var(--radius-sm);font-size:11px;color:var(--accent4);line-height:1.5">⚠️ Client IDが未設定です。<a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--accent)">Google Cloud Console</a>でOAuth 2.0クライアントIDを取得し、コード内の<code>GCAL_CLIENT_ID</code>に設定してください。</div>':''}
     ${state.gcalConnected?'<div style="margin-top:6px;font-size:11px;color:var(--accent3)">✓ 認証済み（イベント '+((state.gcalEvents||[]).length)+'件取得済み）</div>':''}
     ${state.gcalConnected&&!_gcalAccessToken?'<div style="margin-top:6px;font-size:11px;color:var(--accent4)">⚠ セッション切れ — 再接続が必要です</div>':''}
-    <div class="int-actions">
+    <div class="int-actions" style="flex-wrap:wrap">
       ${state.gcalConnected
-        ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGcal()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGcal()">🔄 イベント更新</button><button class="btn btn-ghost btn-sm" style="color:var(--accent3)" onclick="syncAllTodosGcalGlobal()">📌 TODO日程を一括同期</button>`
+        ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGcal()">連携を解除</button>
+           <button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGcal()">🔄 イベント更新</button>
+           <button class="btn btn-ghost btn-sm" style="color:var(--accent3)" onclick="syncAllTodosGcalGlobal()">📌 TODO一括同期</button>`
         :`<button class="btn btn-primary btn-sm" onclick="doConnectGcal()">📅 カレンダーと連携する</button>`}
-      ${state.gcalConnected?`<div style="margin-top:10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${state.gcalAutoSync?'checked':''} onchange="toggleGcalAutoSync(this.checked)"> 日程変更時に自動でGoogleカレンダーへ同期する（OFFは「📅 GCalに登録」ボタンで手動確定）</label></div>`:''}
-      ${state.gcalConnected&&!state.gcalAutoSync?`<div style="margin-top:4px;font-size:11px;color:var(--accent3)">✔ 手動確定モード — 各TODOとアクションログの「📅 GCalに登録」ボタンで同期します</div>`:''}
-
     </div>
+    ${state.gcalConnected?`
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);line-height:1.5">
+        <input type="checkbox" ${state.gcalAutoSync?'checked':''} onchange="toggleGcalAutoSync(this.checked)" style="margin-top:2px;flex-shrink:0">
+        <span>日程変更時に自動でGoogleカレンダーへ同期する<br>
+          <span style="font-size:11px;color:var(--text3)">OFFにすると各TODO・アクションログの「📅 GCalに登録」ボタンで手動確定</span>
+        </span>
+      </label>
+      ${!state.gcalAutoSync?'<div style="margin-top:6px;font-size:11px;color:var(--accent3);padding-left:22px">✔ 手動確定モードが有効です</div>':''}
+    </div>`:''}
   </div>
   <div class="int-card ${state.gdriveConnected?'connected':''}">
     <div class="int-card-header">
