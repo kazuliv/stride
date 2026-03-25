@@ -4472,6 +4472,23 @@ async function gcalApiFetch(url,options={},_isRetry){
 }
 
 var _gcalRefreshResolve=null;
+var _gcalProactiveTimer=null;
+
+// プロアクティブにトークンをリフレッシュするタイマーをセット（失効55分前）
+function scheduleGcalTokenRefresh(expiresInSeconds){
+  if(_gcalProactiveTimer) clearTimeout(_gcalProactiveTimer);
+  const refreshAfterMs=Math.max((expiresInSeconds-300)*1000,30000); // 最低30秒後
+  console.log('[GCal] Next auto-refresh in '+(refreshAfterMs/60000).toFixed(1)+'min');
+  _gcalProactiveTimer=setTimeout(async function(){
+    console.log('[GCal] Proactive token refresh...');
+    const ok=await gcalSilentRefresh();
+    if(!ok){
+      // サイレントリフレッシュ失敗 → ユーザーに通知（ただし静かに）
+      console.warn('[GCal] Proactive refresh failed — will retry on next API call');
+    }
+  },refreshAfterMs);
+}
+
 function gcalSilentRefresh(){
   return new Promise(function(resolve){
     if(!GCAL_CLIENT_ID||typeof google==='undefined'||!google.accounts){resolve(false);return;}
@@ -4503,7 +4520,9 @@ async function gcalTokenCallback(tokenResponse){
   }
   _gcalAccessToken=tokenResponse.access_token;
   state.gcalConnected=true;save();updateIntDots();
-  console.log('[GCal] Token obtained/refreshed');
+  // トークン失効前に自動リフレッシュをスケジュール
+  scheduleGcalTokenRefresh(tokenResponse.expires_in||3600);
+  console.log('[GCal] Token obtained/refreshed (expires_in='+(tokenResponse.expires_in||3600)+'s)');
   // Handle initial connect (fetch calendar info, events, etc.)
   if(_gcalIsInitialConnect){
     _gcalIsInitialConnect=false;
@@ -5107,6 +5126,13 @@ if(state.gcalConnected&&!_gcalAccessToken){
     }
   },1500);
 }
+// 10分ごとのフォールバックチェック: トークンが切れていたらサイレント再取得
+setInterval(async function(){
+  if(!state.gcalConnected) return;
+  if(_gcalAccessToken) return; // proactiveタイマーが動いていれば不要
+  console.log('[GCal] Periodic check: token missing, attempting silent refresh...');
+  await gcalSilentRefresh();
+},600000); // 10分
 
 // ============================================================
 // FLOATING CALENDAR DRAWER
