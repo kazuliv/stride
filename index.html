@@ -646,6 +646,7 @@ let state = {
   inbox: [],       // GTD inbox: [{id, text, created, note}]
   delegated: [],   // Delegated tasks: [{id, text, delegateTo, checkDate, memo, done, created}]
   gcalConnected: false,
+  gcalAutoSync: true, // falseにすると日程変更時にGCalへ自動同期しない
   kanban: {
     groupBy: 'status', // 'status' | 'company' | 'project'
     columns: null, // null = auto from groupBy
@@ -1565,7 +1566,7 @@ function doCalSlotAddLog(taskId,dateStr,startTime,endTime){
   r.task.actionLogs.push(log);
   save();
   // Sync to GCal
-  if(state.gcalConnected) syncActionLogToGcal(r,log);
+  if(state.gcalConnected&&state.gcalAutoSync) syncActionLogToGcal(r,log);
   closeModal();
   buildHomeWeekGrid();
   showToast('稼働ログを追加しました');
@@ -2288,7 +2289,7 @@ function setCalplanFilter(val){
 function calplanSetDate(taskId,field,value){
   updateTask(taskId,{[field]:value});
   const r=getTask(taskId);
-  if(r&&r.task.gcal&&state.gcalConnected&&
+  if(r&&r.task.gcal&&state.gcalConnected&&state.gcalAutoSync&&
     (field==='actionDate'||field==='actionStartTime'||field==='actionEndTime'||field==='startDate'||field==='dueDate')){
     debouncedGcalSync(taskId,r);
   }
@@ -2787,7 +2788,7 @@ function setTodoActionDate(taskId,todoId,date){
       linkedLog.linkedTodoText=td.text;
     }
     save();
-    if(state.gcalConnected) syncActionLogToGcal(r,linkedLog);
+    if(state.gcalConnected&&state.gcalAutoSync) syncActionLogToGcal(r,linkedLog);
   }else if(!date&&oldDate){
     const linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
     if(linkedLog&&linkedLog.gcalEventId&&state.gcalConnected){
@@ -2812,7 +2813,7 @@ function setTodoActionTime(taskId,todoId,field,value){
       const logField=field==='actionStartTime'?'startTime':field==='actionEndTime'?'endTime':field;
       linkedLog[logField]=value;
       save();
-      if(state.gcalConnected&&td.actionDate) syncActionLogToGcal(r,linkedLog);
+      if(state.gcalConnected&&state.gcalAutoSync&&td.actionDate) syncActionLogToGcal(r,linkedLog);
     }
   }
   if(ui.selectedTaskId===taskId) renderDetail(taskId);
@@ -2988,7 +2989,10 @@ async function syncActionLogToGcal(r,log,opts={}){
         if(!opts.silent) showToast(log.linkedTodoText?'📅 TodoのGCal予定を更新しました':'📅 アクションログのカレンダー予定を更新しました');
       }catch(patchErr){
         console.warn('[ActionLog→GCal] PATCH failed ('+patchErr.message+'), retrying as POST');
+        // 古いイベントを削除してから新規作成（孤立イベント防止）
+        const oldId=log.gcalEventId;
         log.gcalEventId='';
+        try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+oldId,{method:'DELETE'});}catch(e){/*already gone*/}
         const created=await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events',{method:'POST',body:JSON.stringify(event)});
         if(created&&created.id){
           log.gcalEventId=created.id;save();
@@ -3051,7 +3055,7 @@ function saveDetailField(id,field,value){
     // When actionDate is cleared, delete the gcal action event
     if(field==='actionDate'&&!trimmed&&prevActionDate&&r.task.gcalEventId){
       deleteTaskActionGcalEvent(r.task);
-    }else{
+    }else if(state.gcalAutoSync){
       debouncedGcalSync(id,r);
     }
   }
@@ -4192,6 +4196,9 @@ function buildIntegrations(){
       ${state.gcalConnected
         ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGcal()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGcal()">🔄 イベント更新</button><button class="btn btn-ghost btn-sm" style="color:var(--accent3)" onclick="syncAllTodosGcalGlobal()">📌 TODO日程を一括同期</button>`
         :`<button class="btn btn-primary btn-sm" onclick="doConnectGcal()">📅 カレンダーと連携する</button>`}
+      ${state.gcalConnected?`<div style="margin-top:10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${state.gcalAutoSync?'checked':''} onchange="toggleGcalAutoSync(this.checked)"> 日程変更時に自動でGoogleカレンダーへ同期する</label></div>`:''}
+      ${state.gcalConnected&&!state.gcalAutoSync?`<div style="margin-top:4px;font-size:11px;color:var(--accent4)">⚠ 自動同期OFF — 「📌 TODO日程を一括同期」ボタンで手動同期できます</div>`:''}
+
     </div>
   </div>
   <div class="int-card ${state.gdriveConnected?'connected':''}">
@@ -4292,6 +4299,11 @@ async function doConnectGcal(){
     showToast('連携に失敗しました: '+e.message,'error');
     if(btn){btn.textContent='連携を開始';btn.disabled=false;}
   }
+}
+function toggleGcalAutoSync(val){
+  state.gcalAutoSync=!!val;save();
+  showToast(val?'✅ GCal自動同期をONにしました':'⏸ GCal自動同期をOFFにしました（手動同期に切り替え）');
+  openModal('integrations'); // 設定画面を再描画
 }
 function doDisconnectGcal(){
   if(_gcalAccessToken&&typeof google!=='undefined'&&google.accounts){
