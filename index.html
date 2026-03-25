@@ -36,7 +36,7 @@
   --radius-sm:6px;
   --radius-lg:14px;
   --sidebar:260px;
-  --detail:360px;
+  --detail:420px;
 }
 html,body{height:100%;overflow:hidden}
 body{font-family:'DM Sans','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
@@ -2669,17 +2669,17 @@ function renderDetail(id){
     </div>
     <div style="margin-top:8px">
       <div style="font-size:11px;color:var(--accent);margin-bottom:4px;font-weight:600">★ アクション日（今日のアクションに表示）</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <input class="detail-input" type="date" value="${t.actionDate||''}" onchange="saveDetailField('${id}','actionDate',this.value)" style="border-color:var(--accent);flex:1;min-width:120px">
-        <input class="detail-input" type="time" value="${t.actionStartTime||''}" onchange="saveDetailField('${id}','actionStartTime',this.value)" style="border-color:var(--accent);width:90px" placeholder="開始" title="開始時間">
+      <div style="display:flex;gap:6px;align-items:center">
+        <input class="detail-input" type="date" value="${t.actionDate||''}" onchange="saveDetailField('${id}','actionDate',this.value)" style="border-color:var(--accent);flex:1;min-width:100px">
+        <input class="detail-input" type="time" value="${t.actionStartTime||''}" onchange="saveDetailField('${id}','actionStartTime',this.value)" style="border-color:var(--accent);width:84px" placeholder="開始" title="開始時間">
         <span style="font-size:11px;color:var(--text3)">〜</span>
-        <input class="detail-input" type="time" value="${t.actionEndTime||''}" onchange="saveDetailField('${id}','actionEndTime',this.value)" style="border-color:var(--accent);width:90px" placeholder="終了" title="終了時間">
-        ${state.gcalConnected&&t.gcal&&t.actionDate?(t.gcalEventId
-          ?`<button onclick="confirmSyncTaskAction('${id}')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--accent3);color:var(--accent3);background:transparent;cursor:pointer;white-space:nowrap">📅 更新</button>`
-          :`<button onclick="confirmSyncTaskAction('${id}')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--accent);color:var(--accent);background:transparent;cursor:pointer;white-space:nowrap">📅 GCalに登録</button>`)
-          :''}
+        <input class="detail-input" type="time" value="${t.actionEndTime||''}" onchange="saveDetailField('${id}','actionEndTime',this.value)" style="border-color:var(--accent);width:84px" placeholder="終了" title="終了時間">
       </div>
-      <div style="font-size:10px;color:var(--text3);margin-top:3px">${state.gcalConnected&&t.gcal?'日付・時間を入力後「📅 GCalに登録」ボタンで確定':'時間を設定するとGoogleカレンダーに時間指定イベントとして登録されます'}</div>
+      ${state.gcalConnected&&t.gcal&&t.actionDate?`
+      <div style="margin-top:5px;display:flex;align-items:center;gap:6px">
+        <button onclick="confirmSyncTaskAction('${id}')" style="font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid ${t.gcalEventId?'var(--accent3)':'var(--accent)'};color:${t.gcalEventId?'var(--accent3)':'var(--accent)'};background:transparent;cursor:pointer;white-space:nowrap">${t.gcalEventId?'📅 GCalを更新':'📅 GCalに登録'}</button>
+        ${t.gcalEventId?'<span style="font-size:10px;color:var(--accent3)">✓ 登録済み</span>':'<span style="font-size:10px;color:var(--text3)">日付・時間を確認してから押してください</span>'}
+      </div>`:'<div style="font-size:10px;color:var(--text3);margin-top:3px">時間を設定するとGoogleカレンダーに時間指定イベントとして登録されます</div>'}
     </div>
     <div style="margin-top:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
