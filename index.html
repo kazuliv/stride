@@ -646,7 +646,7 @@ let state = {
   inbox: [],       // GTD inbox: [{id, text, created, note}]
   delegated: [],   // Delegated tasks: [{id, text, delegateTo, checkDate, memo, done, created}]
   gcalConnected: false,
-  gcalAutoSync: true, // falseにすると日程変更時にGCalへ自動同期しない
+  gcalAutoSync: false, // trueにすると日程変更時にGCalへ自動同期する（デフォルト: 手動確定）
   kanban: {
     groupBy: 'status', // 'status' | 'company' | 'project'
     columns: null, // null = auto from groupBy
@@ -2747,11 +2747,17 @@ function renderDetail(id){
 }
 
 function renderDetailTodos(t){
-  return(t.todos||[]).map((td,i)=>`
+  return(t.todos||[]).map((td,i)=>{
+    const linkedLog=(t.actionLogs||[]).find(l=>l.linkedTodoId===td.id);
+    const isSynced=!!(linkedLog&&linkedLog.gcalEventId);
+    const showGcalBtn=state.gcalConnected&&td.actionDate;
+    const gcalBtnLabel=isSynced?'📅 更新':'📅 GCalに登録';
+    const gcalBtnColor=isSynced?'var(--accent3)':'var(--accent)';
+    return `
   <div class="detail-todo-item" style="flex-wrap:wrap;gap:4px">
     <div class="todo-check ${td.done?'done':''}" onclick="toggleTodo('${t.id}','${td.id}')">${td.done?'✓':''}</div>
     <span class="todo-text ${td.done?'done':''}" style="flex:1;min-width:120px">${esc(td.text)}</span>
-    <div style="display:flex;align-items:center;gap:3px;margin-left:auto">
+    <div style="display:flex;align-items:center;gap:3px;margin-left:auto;flex-wrap:wrap">
       <span style="font-size:10px;color:var(--accent);white-space:nowrap">★</span>
       <input type="date" value="${td.actionDate||''}"
         style="font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:110px"
@@ -2763,9 +2769,12 @@ function renderDetailTodos(t){
       <input type="time" value="${td.actionEndTime||''}"
         style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:70px"
         title="終了時間" onchange="setTodoActionTime('${t.id}','${td.id}','actionEndTime',this.value)">
+      ${showGcalBtn?`<button onclick="confirmSyncTodo('${t.id}','${td.id}')" title="${isSynced?'GCalの予定を更新':'GCalに予定を登録'}"
+        style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid ${gcalBtnColor};color:${gcalBtnColor};background:transparent;cursor:pointer;white-space:nowrap">${gcalBtnLabel}</button>`:''}
     </div>
     <span class="todo-del" onclick="deleteTodo('${t.id}','${td.id}')">✕</span>
-  </div>`).join('');
+  </div>`;
+  }).join('');
 }
 
 function setTodoActionDate(taskId,todoId,date){
@@ -2817,6 +2826,25 @@ function setTodoActionTime(taskId,todoId,field,value){
     }
   }
   if(ui.selectedTaskId===taskId) renderDetail(taskId);
+}
+async function confirmSyncActionLog(taskId,logId){
+  const r=getTask(taskId);if(!r)return;
+  const log=(r.task.actionLogs||[]).find(l=>l.id===logId);if(!log||!log.date)return;
+  await syncActionLogToGcal(r,log);
+  renderDetail(taskId);
+}
+async function confirmSyncTodo(taskId,todoId){
+  const r=getTask(taskId);if(!r)return;
+  const td=r.task.todos.find(x=>x.id===todoId);if(!td||!td.actionDate)return;
+  if(!r.task.actionLogs) r.task.actionLogs=[];
+  let linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
+  if(!linkedLog){
+    linkedLog={id:uid(),date:td.actionDate,startTime:td.actionStartTime||'',endTime:td.actionEndTime||'',gcalEventId:'',linkedTodoId:todoId,linkedTodoText:td.text};
+    r.task.actionLogs.push(linkedLog);
+    save();
+  }
+  await syncActionLogToGcal(r,linkedLog);
+  renderDetail(taskId);
 }
 async function syncTodoToGcal(r,td){
   var calId=getTaskCalId(r.task);
@@ -2881,6 +2909,10 @@ function renderActionLogs(t){
       '<span style="font-size:10px;color:var(--text3)">〜</span>'+
       '<input type="time" value="'+(log.endTime||'')+'" onchange="updateActionLog(\''+t.id+'\',\''+log.id+'\',\'endTime\',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:transparent;width:75px;color:var(--text)">'+
       (dur?'<span style="font-size:10px;color:var(--accent);font-weight:600;margin-left:2px;white-space:nowrap">'+dur+'</span>':'')+
+      (state.gcalConnected&&log.date?(log.gcalEventId
+        ?'<button onclick="confirmSyncActionLog(\''+t.id+'\',\''+log.id+'\')" title="GCalの予定を更新" style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid var(--accent3);color:var(--accent3);background:transparent;cursor:pointer;white-space:nowrap;flex-shrink:0">📅 更新</button>'
+        :'<button onclick="confirmSyncActionLog(\''+t.id+'\',\''+log.id+'\')" title="GCalに予定を登録" style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid var(--accent);color:var(--accent);background:transparent;cursor:pointer;white-space:nowrap;flex-shrink:0">📅 GCalに登録</button>')
+      :'')+
       '<button style="margin-left:auto;color:var(--text3);font-size:12px;flex-shrink:0" onclick="removeActionLog(\''+t.id+'\',\''+log.id+'\')" title="削除">🗑</button>'+
     '</div>';
   }).join('');
@@ -4196,8 +4228,8 @@ function buildIntegrations(){
       ${state.gcalConnected
         ?`<button class="btn btn-ghost btn-sm" onclick="doDisconnectGcal()">連携を解除</button><button class="btn btn-ghost btn-sm" style="color:var(--accent)" onclick="doRefreshGcal()">🔄 イベント更新</button><button class="btn btn-ghost btn-sm" style="color:var(--accent3)" onclick="syncAllTodosGcalGlobal()">📌 TODO日程を一括同期</button>`
         :`<button class="btn btn-primary btn-sm" onclick="doConnectGcal()">📅 カレンダーと連携する</button>`}
-      ${state.gcalConnected?`<div style="margin-top:10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${state.gcalAutoSync?'checked':''} onchange="toggleGcalAutoSync(this.checked)"> 日程変更時に自動でGoogleカレンダーへ同期する</label></div>`:''}
-      ${state.gcalConnected&&!state.gcalAutoSync?`<div style="margin-top:4px;font-size:11px;color:var(--accent4)">⚠ 自動同期OFF — 「📌 TODO日程を一括同期」ボタンで手動同期できます</div>`:''}
+      ${state.gcalConnected?`<div style="margin-top:10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${state.gcalAutoSync?'checked':''} onchange="toggleGcalAutoSync(this.checked)"> 日程変更時に自動でGoogleカレンダーへ同期する（OFFは「📅 GCalに登録」ボタンで手動確定）</label></div>`:''}
+      ${state.gcalConnected&&!state.gcalAutoSync?`<div style="margin-top:4px;font-size:11px;color:var(--accent3)">✔ 手動確定モード — 各TODOとアクションログの「📅 GCalに登録」ボタンで同期します</div>`:''}
 
     </div>
   </div>
