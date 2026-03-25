@@ -1552,7 +1552,7 @@ function doCalSlotSetAction(taskId,dateStr,startTime,endTime){
   var r=getTask(taskId);
   if(r&&state.gcalConnected){
     if(!r.task.gcal){updateTask(taskId,{gcal:true,gcalMode:'action'});}
-    syncGcalByMode(r.task,r.company,r.project);
+    if(state.gcalAutoSync) syncGcalByMode(r.task,r.company,r.project);
   }
   closeModal();
   buildHomeWeekGrid();
@@ -2300,7 +2300,7 @@ function calplanSetDate(taskId,field,value){
 function calplanSetCal(taskId,calId){
   updateTask(taskId,{gcalCalId:calId});
   const r=getTask(taskId);
-  if(r&&r.task.gcal&&r.task.gcalMode&&state.gcalConnected){
+  if(r&&r.task.gcal&&r.task.gcalMode&&state.gcalConnected&&state.gcalAutoSync){
     syncGcalByMode(r.task,r.company,r.project);
   }
   calplanRefreshIframe();
@@ -2977,9 +2977,7 @@ function updateActionLog(taskId,logId,field,value){
   if(!log)return;
   log[field]=value;
   save();
-  // GCal同期: 日付が設定されていれば同期（連携ログも対象）
-  if(log.date&&state.gcalConnected){
-    console.log('[ActionLog] Syncing to GCal:', log.date, log.startTime, log.endTime);
+  if(log.date&&state.gcalConnected&&state.gcalAutoSync){
     syncActionLogToGcal(r,log);
   }
   // Re-render logs section only (avoid full re-render flicker)
