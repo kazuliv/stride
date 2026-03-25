@@ -2674,8 +2674,12 @@ function renderDetail(id){
         <input class="detail-input" type="time" value="${t.actionStartTime||''}" onchange="saveDetailField('${id}','actionStartTime',this.value)" style="border-color:var(--accent);width:90px" placeholder="開始" title="開始時間">
         <span style="font-size:11px;color:var(--text3)">〜</span>
         <input class="detail-input" type="time" value="${t.actionEndTime||''}" onchange="saveDetailField('${id}','actionEndTime',this.value)" style="border-color:var(--accent);width:90px" placeholder="終了" title="終了時間">
+        ${state.gcalConnected&&t.gcal&&t.actionDate?(t.gcalEventId
+          ?`<button onclick="confirmSyncTaskAction('${id}')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--accent3);color:var(--accent3);background:transparent;cursor:pointer;white-space:nowrap">📅 更新</button>`
+          :`<button onclick="confirmSyncTaskAction('${id}')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--accent);color:var(--accent);background:transparent;cursor:pointer;white-space:nowrap">📅 GCalに登録</button>`)
+          :''}
       </div>
-      <div style="font-size:10px;color:var(--text3);margin-top:3px">時間を設定するとGoogleカレンダーに時間指定イベントとして登録されます</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">${state.gcalConnected&&t.gcal?'日付・時間を入力後「📅 GCalに登録」ボタンで確定':'時間を設定するとGoogleカレンダーに時間指定イベントとして登録されます'}</div>
     </div>
     <div style="margin-top:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -2826,6 +2830,12 @@ function setTodoActionTime(taskId,todoId,field,value){
     }
   }
   if(ui.selectedTaskId===taskId) renderDetail(taskId);
+}
+async function confirmSyncTaskAction(taskId){
+  const r=getTask(taskId);if(!r||!r.task.actionDate)return;
+  if(!r.task.gcal){showToast('このタスクはGCal連携が無効です。タスク設定でGCal連携をONにしてください','error');return;}
+  await syncGcalByMode(r.task,r.company,r.project);
+  renderDetail(taskId);
 }
 async function confirmSyncActionLog(taskId,logId){
   const r=getTask(taskId);if(!r)return;
