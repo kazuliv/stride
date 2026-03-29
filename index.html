@@ -65,6 +65,9 @@ input,textarea,select{font-family:inherit;outline:none}
 .nav-row:hover{background:var(--border);color:var(--text)}
 .nav-row.active{background:var(--accent);color:#fff}
 .nav-row.active .nav-badge{background:rgba(255,255,255,.3);color:#fff}
+.drag-handle{font-size:11px;color:var(--text3);cursor:grab;flex-shrink:0;width:14px;text-align:center;opacity:0;transition:opacity .15s;user-select:none;letter-spacing:-1px}
+.nav-row:hover .drag-handle{opacity:1}
+.drag-handle:active{cursor:grabbing}
 .nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 .nav-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nav-badge{margin-left:auto;background:var(--border2);color:var(--text2);border-radius:20px;padding:1px 7px;font-size:11px;font-weight:600;flex-shrink:0}
@@ -583,6 +586,10 @@ textarea.form-input{resize:vertical;min-height:72px}
       <span style="font-size:13px">💾</span>
       <span class="int-label" style="color:var(--text2)">バックアップ</span>
     </div>
+    <div class="integration-badge" onclick="openModal('import')" title="データインポート">
+      <span style="font-size:13px">📥</span>
+      <span class="int-label" style="color:var(--text2)">インポート</span>
+    </div>
   </div>
 </aside>
 
@@ -938,11 +945,12 @@ function renderAll(){
 // ===== SIDEBAR =====
 function renderSidebar(){
   const tree=document.getElementById('companyTree');
-  tree.innerHTML=state.companies.map(c=>{
+  tree.innerHTML=state.companies.map((c,ci)=>{
     const isExpC=ui.expandedCompanies[c.id]!==false;
     const taskCount=c.projects.flatMap(p=>p.tasks).filter(t=>t.status!=='done').length;
-    return`<div class="company-node">
+    return`<div class="company-node" draggable="true" data-company-idx="${ci}" data-company-id="${c.id}">
       <div class="nav-row ${ui.view==='company'&&ui.companyId===c.id?'active':''}" onclick="toggleCompany('${c.id}');navTo('company','${c.id}',null,null,this)">
+        <span class="drag-handle" onmousedown="event.stopPropagation()" title="ドラッグで並び替え">⠿</span>
         <span class="nav-icon" style="color:${c.color}">●</span>
         <span class="nav-label" style="font-weight:600">${esc(c.name)}</span>
         ${taskCount?`<span class="nav-badge">${taskCount}</span>`:''}
@@ -950,11 +958,12 @@ function renderSidebar(){
         <button class="add-btn-inline" onclick="event.stopPropagation();openModal('addProject','${c.id}')" title="プロジェクト追加">＋</button>
         <button class="add-btn-inline" onclick="event.stopPropagation();openModal('editCompany','${c.id}')" title="企業を編集">✎</button>
       </div>
-      ${isExpC?`<div class="project-tree">${c.projects.map(p=>{
+      ${isExpC?`<div class="project-tree">${c.projects.map((p,pi)=>{
         const isExpP=ui.expandedProjects[p.id]!==false;
         const tc=p.tasks.filter(t=>t.status!=='done').length;
-        return`<div class="project-node">
+        return`<div class="project-node" draggable="true" data-project-idx="${pi}" data-company-id="${c.id}" data-project-id="${p.id}">
           <div class="nav-row ${ui.view==='project'&&ui.projectId===p.id?'active':''}" onclick="toggleProject('${p.id}');navTo('project','${c.id}','${p.id}',null,this)">
+            <span class="drag-handle" onmousedown="event.stopPropagation()" title="ドラッグで並び替え">⠿</span>
             <span class="nav-icon">📁</span>
             <span class="nav-label">${esc(p.name)}</span>
             ${tc?`<span class="nav-badge">${tc}</span>`:''}
@@ -966,6 +975,116 @@ function renderSidebar(){
       }).join('')}</div>`:''}
     </div>`;
   }).join('');
+  initSidebarDragDrop();
+}
+
+// ===== SIDEBAR DRAG & DROP =====
+let _sidebarDragType=null; // 'company' or 'project'
+let _sidebarDragData=null;
+
+function initSidebarDragDrop(){
+  const tree=document.getElementById('companyTree');
+  tree.querySelectorAll('.company-node[draggable]').forEach(el=>{
+    el.addEventListener('dragstart',onSidebarDragStart);
+    el.addEventListener('dragover',onSidebarDragOver);
+    el.addEventListener('dragleave',onSidebarDragLeave);
+    el.addEventListener('drop',onSidebarDrop);
+    el.addEventListener('dragend',onSidebarDragEnd);
+  });
+  tree.querySelectorAll('.project-node[draggable]').forEach(el=>{
+    el.addEventListener('dragstart',onSidebarDragStart);
+    el.addEventListener('dragover',onSidebarDragOver);
+    el.addEventListener('dragleave',onSidebarDragLeave);
+    el.addEventListener('drop',onSidebarDrop);
+    el.addEventListener('dragend',onSidebarDragEnd);
+  });
+}
+
+function onSidebarDragStart(e){
+  const node=e.currentTarget;
+  if(node.dataset.projectIdx!==undefined&&node.classList.contains('project-node')){
+    _sidebarDragType='project';
+    _sidebarDragData={companyId:node.dataset.companyId,projectIdx:parseInt(node.dataset.projectIdx),projectId:node.dataset.projectId};
+  }else{
+    _sidebarDragType='company';
+    _sidebarDragData={companyIdx:parseInt(node.dataset.companyIdx),companyId:node.dataset.companyId};
+  }
+  node.style.opacity='0.4';
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain','');
+  // Prevent company drag when starting from project
+  if(_sidebarDragType==='project')e.stopPropagation();
+}
+
+function onSidebarDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  const node=e.currentTarget;
+  // Only allow same-type drops
+  if(_sidebarDragType==='company'&&node.classList.contains('company-node')){
+    clearSidebarDropIndicators();
+    const rect=node.getBoundingClientRect();
+    const midY=rect.top+rect.height/2;
+    if(e.clientY<midY){node.style.borderTop='2px solid var(--accent)';node.style.borderBottom='';}
+    else{node.style.borderBottom='2px solid var(--accent)';node.style.borderTop='';}
+  }
+  if(_sidebarDragType==='project'&&node.classList.contains('project-node')&&node.dataset.companyId===_sidebarDragData.companyId){
+    e.stopPropagation();
+    clearSidebarDropIndicators();
+    const rect=node.getBoundingClientRect();
+    const midY=rect.top+rect.height/2;
+    if(e.clientY<midY){node.style.borderTop='2px solid var(--accent)';node.style.borderBottom='';}
+    else{node.style.borderBottom='2px solid var(--accent)';node.style.borderTop='';}
+  }
+}
+
+function onSidebarDragLeave(e){
+  e.currentTarget.style.borderTop='';
+  e.currentTarget.style.borderBottom='';
+}
+
+function onSidebarDrop(e){
+  e.preventDefault();
+  const node=e.currentTarget;
+  clearSidebarDropIndicators();
+  if(_sidebarDragType==='company'&&node.classList.contains('company-node')){
+    const fromIdx=_sidebarDragData.companyIdx;
+    let toIdx=parseInt(node.dataset.companyIdx);
+    const rect=node.getBoundingClientRect();
+    const after=e.clientY>rect.top+rect.height/2;
+    if(after)toIdx++;
+    if(fromIdx===toIdx||fromIdx+1===toIdx)return;
+    const [moved]=state.companies.splice(fromIdx,1);
+    const insertAt=toIdx>fromIdx?toIdx-1:toIdx;
+    state.companies.splice(insertAt,0,moved);
+    save();renderSidebar();
+  }
+  if(_sidebarDragType==='project'&&node.classList.contains('project-node')&&node.dataset.companyId===_sidebarDragData.companyId){
+    e.stopPropagation();
+    const c=getCompany(_sidebarDragData.companyId);if(!c)return;
+    const fromIdx=_sidebarDragData.projectIdx;
+    let toIdx=parseInt(node.dataset.projectIdx);
+    const rect=node.getBoundingClientRect();
+    const after=e.clientY>rect.top+rect.height/2;
+    if(after)toIdx++;
+    if(fromIdx===toIdx||fromIdx+1===toIdx)return;
+    const [moved]=c.projects.splice(fromIdx,1);
+    const insertAt=toIdx>fromIdx?toIdx-1:toIdx;
+    c.projects.splice(insertAt,0,moved);
+    save();renderSidebar();
+  }
+}
+
+function onSidebarDragEnd(e){
+  e.currentTarget.style.opacity='';
+  clearSidebarDropIndicators();
+  _sidebarDragType=null;_sidebarDragData=null;
+}
+
+function clearSidebarDropIndicators(){
+  document.querySelectorAll('#companyTree .company-node, #companyTree .project-node').forEach(el=>{
+    el.style.borderTop='';el.style.borderBottom='';
+  });
 }
 
 function toggleDashboard(){
@@ -3775,6 +3894,7 @@ function buildModal(type,...args){
   if(type==='kanbanSettings')return buildKanbanSettings();
   if(type==='csvExport')return buildCsvExport();
   if(type==='backup')return buildBackupModal();
+  if(type==='import')return buildImportModal();
   if(type==='recurrence')return buildRecurrenceModal(args[0]);
   if(type==='inboxClassify')return buildInboxClassify(args[0]);
   if(type==='inboxDelegate')return buildInboxDelegate(args[0]);
@@ -5057,6 +5177,493 @@ function showBackupReminder(msg){
     // Auto dismiss after 15 seconds
     setTimeout(function(){if(el.parentNode)el.remove();},15000);
   },3000);
+}
+
+// ============================================================
+// IMPORT (CSV / JSON merge / Notion / Trello / Todoist)
+// ============================================================
+
+function buildImportModal(){
+  return`<div class="modal-title">📥 データインポート<span class="modal-close" onclick="closeModal()">✕</span></div>
+  <div style="margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.6">
+    外部ツールやCSVからタスクをインポートします。<br>
+    <b>既存データは消えません</b>（マージ追加されます）。
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px" id="import-tabs">
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-sm" style="flex:1" onclick="switchImportTab('csv')" id="imp-tab-csv">CSV</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="switchImportTab('json')" id="imp-tab-json">Stride JSON</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="switchImportTab('notion')" id="imp-tab-notion">Notion</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="switchImportTab('trello')" id="imp-tab-trello">Trello</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="switchImportTab('todoist')" id="imp-tab-todoist">Todoist</button>
+    </div>
+    <div id="import-panel"></div>
+  </div>`;
+}
+
+let _importTab='csv';
+function switchImportTab(tab){
+  _importTab=tab;
+  ['csv','json','notion','trello','todoist'].forEach(t=>{
+    const b=document.getElementById('imp-tab-'+t);
+    if(b){b.className=t===tab?'btn btn-sm':'btn btn-ghost btn-sm';b.style.flex='1';}
+  });
+  document.getElementById('import-panel').innerHTML=buildImportPanel(tab);
+}
+
+function buildImportPanel(tab){
+  if(tab==='csv') return buildImportCsvPanel();
+  if(tab==='json') return buildImportJsonPanel();
+  if(tab==='notion') return buildImportNotionPanel();
+  if(tab==='trello') return buildImportTrelloPanel();
+  if(tab==='todoist') return buildImportTodoistPanel();
+  return'';
+}
+
+function buildImportCsvPanel(){
+  return`<div style="padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+    <div style="font-weight:700;font-size:13px;margin-bottom:6px">CSVインポート</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.6">
+      CSVファイルからタスクを一括追加します。<br>
+      <b>必須列:</b> 企業, プロジェクト, タスク名<br>
+      <b>任意列:</b> ステータス, 優先度, 開始日, 締切日, アクション日, メモ<br>
+      <span style="color:var(--text3)">※ StrideのCSV出力と同じフォーマットに対応</span>
+    </div>
+    <div style="margin-bottom:8px">
+      <button class="btn btn-ghost btn-sm" onclick="downloadImportTemplate()" style="font-size:11px">📄 テンプレートをダウンロード</button>
+    </div>
+    <label class="btn btn-primary" style="width:100%;justify-content:center;cursor:pointer">
+      📂 CSVファイルを選択
+      <input type="file" accept=".csv,.tsv,.txt" onchange="handleCsvImport(this)" style="display:none">
+    </label>
+  </div>`;
+}
+
+function buildImportJsonPanel(){
+  return`<div style="padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+    <div style="font-weight:700;font-size:13px;margin-bottom:6px">Stride JSONマージ</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.6">
+      Strideのバックアップファイルから企業・タスクを<b>マージ追加</b>します。<br>
+      同名の企業・プロジェクトには既存データにタスクを追加します。<br>
+      <span style="color:var(--text3)">※ 「バックアップ・復元」の上書きとは異なり、既存データは保持されます。</span>
+    </div>
+    <label class="btn btn-primary" style="width:100%;justify-content:center;cursor:pointer">
+      📂 Stride JSONファイルを選択
+      <input type="file" accept=".json" onchange="handleJsonMergeImport(this)" style="display:none">
+    </label>
+  </div>`;
+}
+
+function buildImportNotionPanel(){
+  return`<div style="padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+    <div style="font-weight:700;font-size:13px;margin-bottom:6px">Notionインポート</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.6">
+      NotionのデータベースをCSVエクスポートしたファイルを取り込みます。<br>
+      <b>取り込み方法:</b><br>
+      1. Notionのデータベースページ右上 <code>…</code> → <code>Export</code> → <code>CSV</code><br>
+      2. ダウンロードしたCSVを選択<br>
+      <span style="color:var(--text3)">※ Name/Title列 → タスク名、Status列 → ステータスに自動マッピング</span>
+    </div>
+    <div class="form-group" style="margin-bottom:8px">
+      <label class="form-label" style="font-size:11px">インポート先の企業</label>
+      <select class="form-input form-select" id="imp-notion-cid" onchange="impRefreshProjects('notion')" style="font-size:12px">
+        ${state.companies.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('')}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label" style="font-size:11px">インポート先のプロジェクト</label>
+      <select class="form-input form-select" id="imp-notion-pid" style="font-size:12px">
+        ${(state.companies[0]?.projects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('')}
+      </select>
+    </div>
+    <label class="btn btn-primary" style="width:100%;justify-content:center;cursor:pointer">
+      📂 Notion CSVを選択
+      <input type="file" accept=".csv" onchange="handleNotionImport(this)" style="display:none">
+    </label>
+  </div>`;
+}
+
+function buildImportTrelloPanel(){
+  return`<div style="padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+    <div style="font-weight:700;font-size:13px;margin-bottom:6px">Trelloインポート</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.6">
+      TrelloボードのJSONエクスポートを取り込みます。<br>
+      <b>取り込み方法:</b><br>
+      1. Trelloボード → メニュー → <code>もっと見る</code> → <code>Print and Export</code> → <code>Export as JSON</code><br>
+      2. ダウンロードしたJSONを選択<br>
+      <span style="color:var(--text3)">※ ボード名 → プロジェクト名、カード → タスクとして取り込みます</span>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label" style="font-size:11px">インポート先の企業</label>
+      <select class="form-input form-select" id="imp-trello-cid" style="font-size:12px">
+        ${state.companies.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('')}
+      </select>
+    </div>
+    <label class="btn btn-primary" style="width:100%;justify-content:center;cursor:pointer">
+      📂 Trello JSONを選択
+      <input type="file" accept=".json" onchange="handleTrelloImport(this)" style="display:none">
+    </label>
+  </div>`;
+}
+
+function buildImportTodoistPanel(){
+  return`<div style="padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+    <div style="font-weight:700;font-size:13px;margin-bottom:6px">Todoistインポート</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.6">
+      TodoistのCSVエクスポートを取り込みます。<br>
+      <b>取り込み方法:</b><br>
+      1. Todoist → 設定 → データのエクスポート → CSVとしてエクスポート<br>
+      2. ダウンロードしたCSVを選択<br>
+      <span style="color:var(--text3)">※ TYPE=task の行をタスクとして取り込みます</span>
+    </div>
+    <div class="form-group" style="margin-bottom:8px">
+      <label class="form-label" style="font-size:11px">インポート先の企業</label>
+      <select class="form-input form-select" id="imp-todoist-cid" onchange="impRefreshProjects('todoist')" style="font-size:12px">
+        ${state.companies.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('')}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label" style="font-size:11px">インポート先のプロジェクト</label>
+      <select class="form-input form-select" id="imp-todoist-pid" style="font-size:12px">
+        ${(state.companies[0]?.projects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('')}
+      </select>
+    </div>
+    <label class="btn btn-primary" style="width:100%;justify-content:center;cursor:pointer">
+      📂 Todoist CSVを選択
+      <input type="file" accept=".csv" onchange="handleTodoistImport(this)" style="display:none">
+    </label>
+  </div>`;
+}
+
+function impRefreshProjects(source){
+  const cid=document.getElementById('imp-'+source+'-cid')?.value;
+  const c=getCompany(cid);
+  const sel=document.getElementById('imp-'+source+'-pid');
+  if(sel) sel.innerHTML=(c?.projects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+}
+
+// --- CSV Template Download ---
+function downloadImportTemplate(){
+  const headers=['企業','プロジェクト','タスク名','ステータス','優先度','開始日','締切日','アクション日','メモ'];
+  const example=['サンプル企業','Webサイト制作','デザイン確認','未着手','中','2026-04-01','2026-04-15','2026-04-02','クライアント確認待ち'];
+  const csvEsc=v=>{const s=String(v??'');return s.includes(',')||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;};
+  const csv='\uFEFF'+headers.map(csvEsc).join(',')+'\n'+example.map(csvEsc).join(',');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='stride-import-template.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// --- CSV Parser ---
+function parseCsvText(text){
+  const lines=[];let cur=[];let field='';let inQ=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(inQ){
+      if(ch==='"'&&text[i+1]==='"'){field+='"';i++;}
+      else if(ch==='"'){inQ=false;}
+      else{field+=ch;}
+    }else{
+      if(ch==='"'){inQ=true;}
+      else if(ch===','||ch==='\t'){cur.push(field);field='';}
+      else if(ch==='\n'||ch==='\r'){
+        if(ch==='\r'&&text[i+1]==='\n')i++;
+        cur.push(field);field='';
+        if(cur.some(c=>c.trim()))lines.push(cur);
+        cur=[];
+      }else{field+=ch;}
+    }
+  }
+  cur.push(field);
+  if(cur.some(c=>c.trim()))lines.push(cur);
+  return lines;
+}
+
+// --- Find or create company/project ---
+function findOrCreateCompany(name){
+  let c=state.companies.find(x=>x.name.trim()===name.trim());
+  if(c)return c;
+  const colors=['#3b7dd8','#e85d3a','#2a9e6e','#d4820e','#7c4ddb','#0e9ec4','#e85d9a','#ab47bc'];
+  c={id:uid(),name:name.trim(),color:colors[state.companies.length%colors.length],projects:[]};
+  state.companies.push(c);
+  return c;
+}
+
+function findOrCreateProject(company,name){
+  let p=company.projects.find(x=>x.name.trim()===name.trim());
+  if(p)return p;
+  p={id:uid(),name:name.trim(),status:'active',tasks:[],startDate:'',dueDate:'',note:'',gdocUrl:''};
+  company.projects.push(p);
+  return p;
+}
+
+// --- Status/Priority mapping ---
+function mapStatus(raw){
+  if(!raw)return'todo';
+  const s=raw.trim().toLowerCase();
+  if(s==='完了'||s==='done'||s==='complete'||s==='completed')return'done';
+  if(s==='進行中'||s==='doing'||s==='in progress'||s==='in_progress'||s==='active')return'doing';
+  return'todo';
+}
+function mapPriority(raw){
+  if(!raw)return'med';
+  const s=raw.trim().toLowerCase();
+  if(s==='高'||s==='high'||s==='p1'||s==='1'||s==='urgent')return'high';
+  if(s==='低'||s==='low'||s==='p3'||s==='3'||s==='4')return'low';
+  return'med';
+}
+
+// --- CSV Import Handler ---
+function handleCsvImport(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const lines=parseCsvText(e.target.result);
+      if(lines.length<2){showToast('CSVにデータ行がありません','error');return;}
+      const headers=lines[0].map(h=>h.trim());
+      // Map header columns (support both JP and EN)
+      const colMap={};
+      headers.forEach((h,i)=>{
+        const hl=h.toLowerCase();
+        if(h==='企業'||hl==='company')colMap.company=i;
+        else if(h==='プロジェクト'||hl==='project')colMap.project=i;
+        else if(h==='タスク名'||hl==='task'||hl==='title'||hl==='name'||hl==='task name')colMap.title=i;
+        else if(h==='ステータス'||hl==='status')colMap.status=i;
+        else if(h==='優先度'||hl==='priority')colMap.priority=i;
+        else if(h==='開始日'||hl==='start'||hl==='start date'||hl==='startdate')colMap.startDate=i;
+        else if(h==='締切日'||hl==='due'||hl==='due date'||hl==='duedate'||hl==='deadline')colMap.dueDate=i;
+        else if(h==='アクション日'||hl==='action'||hl==='action date'||hl==='actiondate')colMap.actionDate=i;
+        else if(h==='メモ'||hl==='note'||hl==='notes'||hl==='description'||hl==='memo')colMap.note=i;
+      });
+      if(colMap.company===undefined||colMap.project===undefined||colMap.title===undefined){
+        showToast('必須列が見つかりません（企業, プロジェクト, タスク名）','error');return;
+      }
+      const rows=lines.slice(1);
+      let added=0;
+      rows.forEach(row=>{
+        const companyName=(row[colMap.company]||'').trim();
+        const projectName=(row[colMap.project]||'').trim();
+        const title=(row[colMap.title]||'').trim();
+        if(!companyName||!projectName||!title)return;
+        const c=findOrCreateCompany(companyName);
+        const p=findOrCreateProject(c,projectName);
+        const t={
+          id:uid(),title,
+          priority:mapPriority(colMap.priority!==undefined?row[colMap.priority]:''),
+          status:mapStatus(colMap.status!==undefined?row[colMap.status]:''),
+          startDate:(colMap.startDate!==undefined?(row[colMap.startDate]||'').trim():''),
+          dueDate:(colMap.dueDate!==undefined?(row[colMap.dueDate]||'').trim():''),
+          actionDate:(colMap.actionDate!==undefined?(row[colMap.actionDate]||'').trim():''),
+          note:(colMap.note!==undefined?(row[colMap.note]||'').trim():''),
+          gcal:false,gdocUrl:'',todos:[],created:Date.now(),
+        };
+        p.tasks.push(t);
+        added++;
+      });
+      save();closeModal();renderAll();
+      showToast(`CSVから ${added}件のタスクをインポートしました`,'success');
+    }catch(err){
+      showToast('CSVの読み込みに失敗: '+err.message,'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// --- JSON Merge Import ---
+function handleJsonMergeImport(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!data._stride_backup||!data.state){showToast('無効なStrideバックアップファイルです','error');return;}
+      const srcCompanies=data.state.companies||[];
+      let addedTasks=0,addedCompanies=0,addedProjects=0;
+      srcCompanies.forEach(sc=>{
+        const c=findOrCreateCompany(sc.name);
+        if(!state.companies.includes(c))addedCompanies++;// newly created above
+        (sc.projects||[]).forEach(sp=>{
+          const p=findOrCreateProject(c,sp.name);
+          const existingTitles=new Set(p.tasks.map(t=>t.title));
+          (sp.tasks||[]).forEach(st=>{
+            if(existingTitles.has(st.title))return;// skip duplicates by title
+            const t={...st,id:uid(),created:st.created||Date.now()};
+            delete t.gcalEventId;// don't copy GCal references
+            p.tasks.push(t);
+            addedTasks++;
+          });
+        });
+      });
+      save();closeModal();renderAll();
+      showToast(`マージ完了: ${addedTasks}件のタスクを追加しました`,'success');
+    }catch(err){
+      showToast('JSONの読み込みに失敗: '+err.message,'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// --- Notion CSV Import ---
+function handleNotionImport(input){
+  const file=input.files[0];if(!file)return;
+  const cid=document.getElementById('imp-notion-cid')?.value;
+  const pid=document.getElementById('imp-notion-pid')?.value;
+  const c=getCompany(cid);const p=c?c.projects.find(x=>x.id===pid):null;
+  if(!c||!p){showToast('インポート先の企業・プロジェクトを選択してください','error');return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const lines=parseCsvText(e.target.result);
+      if(lines.length<2){showToast('CSVにデータ行がありません','error');return;}
+      const headers=lines[0].map(h=>h.trim().toLowerCase());
+      // Find Notion columns
+      const nameIdx=headers.findIndex(h=>h==='name'||h==='title'||h==='名前'||h==='タイトル');
+      const statusIdx=headers.findIndex(h=>h==='status'||h==='ステータス');
+      const priorityIdx=headers.findIndex(h=>h==='priority'||h==='優先度');
+      const dateIdx=headers.findIndex(h=>h==='date'||h==='due'||h==='due date'||h==='締切'||h==='締切日');
+      const noteIdx=headers.findIndex(h=>h==='notes'||h==='description'||h==='メモ'||h==='note');
+      if(nameIdx<0){showToast('Name/Title列が見つかりません','error');return;}
+      let added=0;
+      lines.slice(1).forEach(row=>{
+        const title=(row[nameIdx]||'').trim();
+        if(!title)return;
+        const t={
+          id:uid(),title,
+          priority:priorityIdx>=0?mapPriority(row[priorityIdx]):'med',
+          status:statusIdx>=0?mapStatus(row[statusIdx]):'todo',
+          startDate:'',
+          dueDate:dateIdx>=0?(row[dateIdx]||'').trim().split(/[→~〜]/)[0].trim():'',
+          actionDate:'',
+          note:noteIdx>=0?(row[noteIdx]||'').trim():'',
+          gcal:false,gdocUrl:'',todos:[],created:Date.now(),
+        };
+        p.tasks.push(t);
+        added++;
+      });
+      save();closeModal();renderAll();
+      showToast(`Notionから ${added}件のタスクをインポートしました`,'success');
+    }catch(err){
+      showToast('Notion CSVの読み込みに失敗: '+err.message,'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// --- Trello JSON Import ---
+function handleTrelloImport(input){
+  const file=input.files[0];if(!file)return;
+  const cid=document.getElementById('imp-trello-cid')?.value;
+  const c=getCompany(cid);
+  if(!c){showToast('インポート先の企業を選択してください','error');return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!data.cards&&!data.name){showToast('Trelloのエクスポートファイルではないようです','error');return;}
+      const boardName=data.name||'Trelloボード';
+      const p=findOrCreateProject(c,boardName);
+      // Build list name map
+      const listMap={};
+      (data.lists||[]).forEach(l=>{listMap[l.id]=l.name;});
+      let added=0;
+      (data.cards||[]).forEach(card=>{
+        if(card.closed)return;// skip archived cards
+        const listName=(listMap[card.idList]||'').toLowerCase();
+        let status='todo';
+        if(listName.includes('done')||listName.includes('完了')||listName.includes('complete'))status='done';
+        else if(listName.includes('doing')||listName.includes('progress')||listName.includes('進行中'))status='doing';
+        const t={
+          id:uid(),title:card.name,
+          priority:'med',status,
+          startDate:card.start?card.start.slice(0,10):'',
+          dueDate:card.due?card.due.slice(0,10):'',
+          actionDate:'',
+          note:card.desc||'',
+          gcal:false,gdocUrl:'',
+          todos:(card.checklists||[]).flatMap(cl=>(cl.checkItems||[]).map(ci=>({
+            id:uid(),text:ci.name,done:ci.state==='complete',actionDate:''
+          }))),
+          created:Date.now(),
+        };
+        p.tasks.push(t);
+        added++;
+      });
+      save();closeModal();renderAll();
+      showToast(`Trelloから ${added}件のタスクをインポートしました（プロジェクト: ${boardName}）`,'success');
+    }catch(err){
+      showToast('Trello JSONの読み込みに失敗: '+err.message,'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// --- Todoist CSV Import ---
+function handleTodoistImport(input){
+  const file=input.files[0];if(!file)return;
+  const cid=document.getElementById('imp-todoist-cid')?.value;
+  const pid=document.getElementById('imp-todoist-pid')?.value;
+  const c=getCompany(cid);const p=c?c.projects.find(x=>x.id===pid):null;
+  if(!c||!p){showToast('インポート先の企業・プロジェクトを選択してください','error');return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const lines=parseCsvText(e.target.result);
+      if(lines.length<2){showToast('CSVにデータ行がありません','error');return;}
+      const headers=lines[0].map(h=>h.trim().toLowerCase());
+      const typeIdx=headers.indexOf('type');
+      const contentIdx=headers.findIndex(h=>h==='content'||h==='task_name'||h==='name');
+      const priorityIdx=headers.indexOf('priority');
+      const dueDateIdx=headers.findIndex(h=>h==='due_date'||h==='date');
+      const descIdx=headers.findIndex(h=>h==='description'||h==='note');
+      if(contentIdx<0){showToast('Content/Name列が見つかりません','error');return;}
+      let added=0;
+      lines.slice(1).forEach(row=>{
+        // skip section rows
+        if(typeIdx>=0&&(row[typeIdx]||'').trim().toLowerCase()==='section')return;
+        const title=(row[contentIdx]||'').trim();
+        if(!title)return;
+        // Todoist priority: 4=urgent→high, 3→med, 2→med, 1→low
+        let pri='med';
+        if(priorityIdx>=0){
+          const pv=parseInt(row[priorityIdx])||0;
+          if(pv>=4)pri='high';else if(pv<=1)pri='low';
+        }
+        const t={
+          id:uid(),title,
+          priority:pri,status:'todo',
+          startDate:'',
+          dueDate:dueDateIdx>=0?(row[dueDateIdx]||'').trim():'',
+          actionDate:'',
+          note:descIdx>=0?(row[descIdx]||'').trim():'',
+          gcal:false,gdocUrl:'',todos:[],created:Date.now(),
+        };
+        p.tasks.push(t);
+        added++;
+      });
+      save();closeModal();renderAll();
+      showToast(`Todoistから ${added}件のタスクをインポートしました`,'success');
+    }catch(err){
+      showToast('Todoist CSVの読み込みに失敗: '+err.message,'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// After modal opens for import, initialize the default tab
+const _origOpenModal=openModal;
+// (Tab initialization handled via setTimeout in openModal override below)
+
+{
+  const _baseOpenModal=openModal;
+  openModal=function(type,...args){
+    _baseOpenModal(type,...args);
+    if(type==='import'){
+      setTimeout(()=>switchImportTab('csv'),30);
+    }
+  };
 }
 
 // ============================================================
