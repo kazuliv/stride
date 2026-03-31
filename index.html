@@ -961,12 +961,14 @@ function renderSidebar(){
       ${isExpC?`<div class="project-tree">${c.projects.map((p,pi)=>{
         const isExpP=ui.expandedProjects[p.id]!==false;
         const tc=p.tasks.filter(t=>t.status!=='done').length;
+        const pDone=p.status==='done';
         return`<div class="project-node" draggable="true" data-project-idx="${pi}" data-company-id="${c.id}" data-project-id="${p.id}">
-          <div class="nav-row ${ui.view==='project'&&ui.projectId===p.id?'active':''}" onclick="toggleProject('${p.id}');navTo('project','${c.id}','${p.id}',null,this)">
+          <div class="nav-row ${ui.view==='project'&&ui.projectId===p.id?'active':''} ${pDone?'proj-done':''}" onclick="toggleProject('${p.id}');navTo('project','${c.id}','${p.id}',null,this)">
             <span class="drag-handle" onmousedown="event.stopPropagation()" title="ドラッグで並び替え">⠿</span>
-            <span class="nav-icon">📁</span>
-            <span class="nav-label">${esc(p.name)}</span>
-            ${tc?`<span class="nav-badge">${tc}</span>`:''}
+            <span class="nav-icon" style="cursor:pointer;${pDone?'opacity:.5':''}" onclick="event.stopPropagation();toggleProjectDone('${c.id}','${p.id}')" title="${pDone?'未完了に戻す':'完了にする'}">${pDone?'✅':'📁'}</span>
+            <span class="nav-label" style="${pDone?'text-decoration:line-through;opacity:.5':''}">${esc(p.name)}</span>
+            ${!pDone&&tc?`<span class="nav-badge">${tc}</span>`:''}
+            ${pDone?'<span style="font-size:10px;color:var(--green);font-weight:600">完了</span>':''}
             <span class="nav-chevron ${isExpP?'open':''}">›</span>
             <button class="add-btn-inline" onclick="event.stopPropagation();openAddTask('${c.id}','${p.id}')">＋</button>
             <button class="add-btn-inline" onclick="event.stopPropagation();openModal('editProject','${c.id}','${p.id}')" title="プロジェクトを編集">✎</button>
@@ -1096,6 +1098,14 @@ function toggleDashboard(){
 }
 function toggleCompany(id){ui.expandedCompanies[id]=ui.expandedCompanies[id]===false?true:false;save();renderSidebar()}
 function toggleProject(id){ui.expandedProjects[id]=ui.expandedProjects[id]===false?true:false;save();renderSidebar()}
+
+function toggleProjectDone(cid,pid){
+  const c=getCompany(cid);if(!c)return;
+  const p=c.projects.find(x=>x.id===pid);if(!p)return;
+  p.status=p.status==='done'?'active':'done';
+  save();renderAll();
+  showToast(p.status==='done'?`「${p.name}」を完了にしました`:`「${p.name}」を未完了に戻しました`);
+}
 
 // ===== BREADCRUMB =====
 function renderBreadcrumb(){
@@ -1231,11 +1241,15 @@ function renderListView(c){
         const gDoing=g.tasks.filter(t=>t.status==='doing').length;
         const gTodo=g.tasks.filter(t=>t.status==='todo').length;
         const gPct=g.tasks.length?Math.round(gDone/g.tasks.length*100):0;
-        return`<div class="proj-section">
+        const projObj=getProject(g.companyId,g.projectId);
+        const projIsDone=projObj?.status==='done';
+        return`<div class="proj-section" style="${projIsDone?'opacity:.6':''}">
           <div class="proj-section-header" onclick="toggleProjSection('${g.projectId}')">
-            <div style="width:9px;height:9px;border-radius:50%;background:${g.companyColor};flex-shrink:0"></div>
+            <div style="width:9px;height:9px;border-radius:50%;background:${projIsDone?'var(--green)':g.companyColor};flex-shrink:0;cursor:pointer" onclick="event.stopPropagation();toggleProjectDone('${g.companyId}','${g.projectId}')" title="${projIsDone?'未完了に戻す':'完了にする'}"></div>
             <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(g.projectName)}</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);${projIsDone?'text-decoration:line-through':''}">
+                ${esc(g.projectName)}${projIsDone?' <span style="font-size:11px;color:var(--green);font-weight:600;text-decoration:none">✅ 完了</span>':''}
+              </div>
               <div style="font-size:11px;color:var(--text3)">${esc(g.companyName)}</div>
             </div>
             <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
@@ -3996,7 +4010,7 @@ function buildEditProject(cid,pid){
     <div class="form-group"><label class="form-label">締め切り</label><input class="form-input" type="date" id="m-epdue" value="${p.dueDate||''}"></div>
   </div>
   <div class="form-group"><label class="form-label">ステータス</label>
-  <select class="form-input form-select" id="m-epstatus"><option value="todo" ${p.status==='todo'?'selected':''}>未着手</option><option value="doing" ${p.status==='doing'?'selected':''}>進行中</option><option value="done" ${p.status==='done'?'selected':''}>完了</option></select></div>
+  <select class="form-input form-select" id="m-epstatus"><option value="active" ${p.status==='active'||p.status==='todo'?'selected':''}>進行中</option><option value="done" ${p.status==='done'?'selected':''}>完了</option></select></div>
   <div class="form-group"><label class="form-label">メモ</label><textarea class="form-input" id="m-epnote" rows="3" placeholder="プロジェクトのメモ...">${esc(p.note||'')}</textarea></div>
   <div class="form-group"><label class="form-label">📄 Googleドキュメント URL</label><input class="form-input" id="m-epgdoc" value="${esc(p.gdocUrl||'')}" placeholder="https://docs.google.com/document/d/...">
   ${p.gdocUrl?`<a href="${esc(p.gdocUrl)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:4px;font-size:12px;color:var(--accent)">📄 ドキュメントを開く ↗</a>`:''}</div>
