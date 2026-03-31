@@ -4731,6 +4731,8 @@ async function fetchGcalEvents(){
   const now=new Date();
   const timeMin=new Date(now);timeMin.setDate(timeMin.getDate()-7);
   const timeMax=new Date(now);timeMax.setDate(timeMax.getDate()+90);
+  const _fetchRangeMin=localDateStr(timeMin);
+  const _fetchRangeMax=localDateStr(timeMax);
   try{
     // Use selected display calendars, or fall back to primary
     var displayCals=state.gcalDisplayCalendars||[];
@@ -4797,14 +4799,24 @@ async function fetchGcalEvents(){
         allDay:!!e.start.date,color:e.colorId||null,htmlLink:e.htmlLink,
       };
     });
-    syncGcalChangesToStride(allEventsById);
+    syncGcalChangesToStride(allEventsById,{min:_fetchRangeMin,max:_fetchRangeMax});
   }catch(e){
     console.error('Failed to fetch GCal events:',e);
   }
 }
 
-function syncGcalChangesToStride(eventsById){
+function syncGcalChangesToStride(eventsById,fetchRange){
   let changed=false;
+  // fetchRange: {min, max} — dates as 'YYYY-MM-DD' strings for the GCal query window
+  // Only clear gcalEventId if the event's date falls within the fetched range
+  // (events outside the range simply weren't fetched, not deleted)
+  const rangeMin=fetchRange?.min||'';
+  const rangeMax=fetchRange?.max||'';
+  function isDateInFetchRange(dateStr){
+    if(!dateStr||!rangeMin||!rangeMax)return false;
+    const d=dateStr.slice(0,10);
+    return d>=rangeMin&&d<=rangeMax;
+  }
   for(const c of state.companies){
     for(const p of c.projects){
       for(const t of p.tasks){
@@ -4827,8 +4839,8 @@ function syncGcalChangesToStride(eventsById){
               const evEndTime=ev.end.slice(11,16);
               if(evEndTime&&evEndTime!==t.actionEndTime){t.actionEndTime=evEndTime;changed=true;}
             }
-          }else{
-            // GCal event was deleted externally — clear the stale ID so re-registration works
+          }else if(isDateInFetchRange(t.actionDate)){
+            // Event date is within fetched range but not found → deleted externally
             console.log('[GCal Sync] Task "'+t.title+'" action event deleted externally, clearing gcalEventId');
             t.gcalEventId='';changed=true;
           }
@@ -4850,7 +4862,7 @@ function syncGcalChangesToStride(eventsById){
                 t.dueDate=dueDate;changed=true;
               }
             }
-          }else{
+          }else if(isDateInFetchRange(t.dueDate||t.startDate)){
             console.log('[GCal Sync] Task "'+t.title+'" due event deleted externally, clearing gcalEventIdDue');
             t.gcalEventIdDue='';changed=true;
           }
@@ -4874,7 +4886,7 @@ function syncGcalChangesToStride(eventsById){
                   const et=ev.end.slice(11,16);
                   if(et&&et!==td.actionEndTime){td.actionEndTime=et;changed=true;}
                 }
-              }else{
+              }else if(isDateInFetchRange(td.actionDate)){
                 console.log('[GCal→Stride] Todo "'+td.text+'" event deleted externally, clearing gcalEventId');
                 td.gcalEventId='';changed=true;
               }
@@ -4910,7 +4922,7 @@ function syncGcalChangesToStride(eventsById){
                     if(log.endTime) linkedTodo.actionEndTime=log.endTime;
                   }
                 }
-              }else{
+              }else if(isDateInFetchRange(log.date)){
                 console.log('[GCal→Stride] Log event deleted externally, clearing gcalEventId'+(log.linkedTodoText?' (TODO: '+log.linkedTodoText+')':''));
                 log.gcalEventId='';changed=true;
               }
