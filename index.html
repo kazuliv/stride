@@ -50,7 +50,9 @@ input,textarea,select{font-family:inherit;outline:none}
 
 /* ===== LAYOUT ===== */
 .app{display:flex;height:100vh;overflow:hidden}
-.sidebar{width:var(--sidebar);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;user-select:none}
+.sidebar{width:var(--sidebar);min-width:180px;max-width:480px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;user-select:none;position:relative}
+.sidebar-resize{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;z-index:20}
+.sidebar-resize:hover,.sidebar-resize.dragging{background:var(--accent);opacity:.3}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--surface)}
 .detail-panel{width:var(--detail);background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .25s ease}
 .detail-panel.hidden{width:0;overflow:hidden;border-left:none}
@@ -413,7 +415,7 @@ input,textarea,select{font-family:inherit;outline:none}
 .calplan-pri{font-size:10px;flex-shrink:0;width:14px;text-align:center}
 
 /* ===== FLOATING CALENDAR DRAWER ===== */
-.cal-fab{position:fixed;bottom:24px;left:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow-md);z-index:150;transition:all .2s;user-select:none}
+.cal-fab{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow-md);z-index:150;transition:all .2s;user-select:none}
 .cal-fab:hover{transform:scale(1.08);box-shadow:var(--shadow-lg)}
 .cal-fab.hidden{display:none}
 .cal-drawer{position:fixed;top:0;left:0;width:min(520px,45vw);height:100vh;background:var(--surface);box-shadow:4px 0 24px rgba(0,0,0,.12);z-index:170;transform:translateX(-100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
@@ -578,6 +580,7 @@ textarea.form-input{resize:vertical;min-height:72px}
     </div>
     <div id="companyTree"></div>
   </div>
+  <div class="sidebar-resize" id="sidebarResize"></div>
   <div class="sidebar-footer">
     <div class="integration-badge" onclick="openModal('integrations')" title="Googleカレンダー">
       <div class="int-dot" id="gcal-dot"></div>
@@ -5836,6 +5839,42 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){closeModal();closeDetail()}
   if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openAddTask()}
 });
+
+// ============================================================
+// SIDEBAR RESIZE
+// ============================================================
+(function(){
+  var handle=document.getElementById('sidebarResize');
+  var sidebar=document.querySelector('.sidebar');
+  if(!handle||!sidebar) return;
+  var dragging=false,startX=0,startW=0;
+  handle.addEventListener('mousedown',function(e){
+    e.preventDefault();
+    dragging=true;startX=e.clientX;startW=sidebar.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor='col-resize';
+    document.body.style.userSelect='none';
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    var newW=Math.min(480,Math.max(180,startW+(e.clientX-startX)));
+    sidebar.style.width=newW+'px';
+  });
+  document.addEventListener('mouseup',function(){
+    if(!dragging)return;
+    dragging=false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor='';
+    document.body.style.userSelect='';
+    // Persist sidebar width
+    try{localStorage.setItem('stride_sidebarW',sidebar.offsetWidth);}catch(e){}
+  });
+  // Restore saved width
+  try{
+    var saved=localStorage.getItem('stride_sidebarW');
+    if(saved){sidebar.style.width=saved+'px';}
+  }catch(e){}
+})();
 
 // ============================================================
 // INIT
