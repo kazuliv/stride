@@ -4806,9 +4806,10 @@ async function fetchGcalEvents(){
     const eventsById={};
     state.gcalEvents=[];
     allItems.forEach(function(e){
-      // Skip Stride-created events (matched by ID or ★ prefix)
+      // Skip Stride-created events (matched by ID or known prefixes)
       if(strideIds[e.id]) return;
-      if((e.summary||'').startsWith('★')) return;
+      var sum=e.summary||'';
+      if(sum.startsWith('★')||sum.startsWith('🔄')||sum.startsWith('📅')) return;
       // Dedup by event ID (same event from multiple calendars)
       if(eventsById[e.id]) return;
       const ev={
