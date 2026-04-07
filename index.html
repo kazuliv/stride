@@ -1761,10 +1761,11 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam, targetGridId){
     }
   });
 
-  // Action logs → timed events (semi-transparent)
+  // Action logs → timed events (semi-transparent) — skip TODO-linked logs (displayed via Todos section)
   all.forEach(function(t){
     var tc=t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)';
     (t.actionLogs||[]).forEach(function(log){
+      if(log.linkedTodoId) return; // TODO日程として表示されるのでスキップ
       if(!log.date||!log.startTime||!log.endTime||!viewDates.includes(log.date)) return;
       var sp=log.startTime.split(':');var sH=parseInt(sp[0])+parseInt(sp[1])/60;
       var ep=log.endTime.split(':');var eH=parseInt(ep[0])+parseInt(ep[1])/60;
