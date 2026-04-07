@@ -847,8 +847,11 @@ async function advanceRecurringTask(task,company,project){
   const baseDate=task.actionDate||today();
   const nextDate=getNextRecurrenceDate(rec,baseDate);
   if(!nextDate) return;
-  // Delete old GCal events before creating new ones to prevent duplicates
-  if(state.gcalConnected&&_gcalAccessToken){
+
+  const hasToken=state.gcalConnected&&_gcalAccessToken;
+
+  // Delete old GCal events only if we have a valid token
+  if(hasToken){
     const calId=getTaskCalId(task);
     if(task.gcalEventId){
       try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventId,{method:'DELETE'});}catch(e){console.error('GCal delete old action event:',e);}
@@ -856,7 +859,12 @@ async function advanceRecurringTask(task,company,project){
     if(task.gcalEventIdDue){
       try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventIdDue,{method:'DELETE'});}catch(e){console.error('GCal delete old due event:',e);}
     }
+    // Clear GCal event IDs only after successful deletion
+    task.gcalEventId='';
+    task.gcalEventIdDue='';
   }
+  // If no token, keep old gcalEventId — syncGcalByMode will PATCH it later with the new date
+
   // Reset task for next occurrence
   task.status='todo';
   task.actionDate=nextDate;
@@ -868,12 +876,10 @@ async function advanceRecurringTask(task,company,project){
   }
   // Clear old action logs
   task.actionLogs=[];
-  // Clear old GCal event IDs
-  task.gcalEventId='';
-  task.gcalEventIdDue='';
   rec.lastGenerated=nextDate;
-  // Create new GCal events for the next occurrence (individual event, user-controlled)
-  if(task.gcal&&state.gcalConnected){
+
+  // Create/update GCal events for the next occurrence
+  if(task.gcal&&hasToken){
     await syncGcalByMode(task,company,project);
   }
 }
@@ -5846,22 +5852,25 @@ navTo('home',null,null,null,document.getElementById('nav-home'));
 setInterval(checkReminders,60000);
 checkReminders();
 checkBackupReminder();
-// Generate recurring tasks on load and every hour
-generateRecurringTasks();
-setInterval(generateRecurringTasks,3600000);
-// Auto-refresh GCal token on page load if previously connected
+// Auto-refresh GCal token on page load, then generate recurring tasks
 if(state.gcalConnected&&!_gcalAccessToken){
   setTimeout(async function(){
     const ok=await gcalSilentRefresh();
     if(ok){
       console.log('[GCal] Auto-reconnected on page load');
       await Promise.all([fetchGcalEvents(),fetchGcalCalendars()]);
-      renderAll();
     } else {
       showToast('Googleカレンダーの再認証が必要です。連携設定から再接続してください。','info');
     }
+    // Generate recurring tasks AFTER GCal token is ready
+    await generateRecurringTasks();
+    renderAll();
   },1500);
+} else {
+  // No GCal connection — run recurring tasks immediately
+  generateRecurringTasks();
 }
+setInterval(generateRecurringTasks,3600000);
 // 10分ごとのフォールバックチェック: トークンが切れていたらサイレント再取得
 setInterval(async function(){
   if(!state.gcalConnected) return;
