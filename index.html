@@ -140,6 +140,7 @@ input,textarea,select{font-family:inherit;outline:none}
 .sf-btn:hover{border-color:var(--border2);background:var(--bg2)}
 .sf-btn.active{color:#fff;border-color:transparent}
 .sf-btn[data-s="all"].active{background:var(--accent)}
+.sf-btn[data-s="active"].active{background:var(--accent)}
 .sf-btn[data-s="todo"].active{background:#6b6860}
 .sf-btn[data-s="doing"].active{background:var(--accent4)}
 .sf-btn[data-s="done"].active{background:var(--green)}
@@ -707,7 +708,7 @@ let ui = {
   ganttZoom: 'month',
   expandedCompanies: {},
   expandedProjects: {},
-  statusFilter: 'all',
+  statusFilter: 'active',
   expandedProjSections: {},
   dashboardExpanded: false,
 };
@@ -852,6 +853,9 @@ async function generateRecurringTasks(){
         if(t.recurrence.nextOccurrence)continue;// already migrated
         const base=t.actionDate||t.dueDate||t.startDate||todayStr;
         t.recurrence.nextOccurrence=base;
+        if(!t.recurrence.todoTemplate){
+          t.recurrence.todoTemplate=(t.todos||[]).map(function(td){return{text:td.text};});
+        }
         t.actionDate='';
         t.dueDate='';
         t.startDate='';
@@ -885,7 +889,12 @@ async function generateRecurringTasks(){
           t.actionDate='';
           t.dueDate='';
           t.startDate='';
-          if(t.todos){t.todos.forEach(function(td){td.done=false;td.actionDate='';});}
+          // Reset todos from template (if defined) — user edits don't carry over
+          if(t.recurrence.todoTemplate){
+            t.todos=t.recurrence.todoTemplate.map(function(td){return{id:uid(),text:td.text,done:false,actionDate:''};});
+          }else if(t.todos){
+            t.todos.forEach(function(td){td.done=false;td.actionDate='';});
+          }
           t.actionLogs=[];
           updated=true;
         }
@@ -917,14 +926,12 @@ async function advanceRecurringTask(task,company,project){
     task.gcalEventIdDue='';
   }
 
-  // Schedule next occurrence: blank dates, user sets actionDate on occurrence day
+  // Schedule next occurrence: blank dates, reset todos from template, clear logs
   task.status='scheduled';
   task.actionDate='';
   task.dueDate='';
   task.startDate='';
-  if(task.todos){
-    task.todos.forEach(function(td){td.done=false;td.actionDate='';});
-  }
+  task.todos=(rec.todoTemplate||[]).map(function(td){return{id:uid(),text:td.text,done:false,actionDate:''};});
   task.actionLogs=[];
   rec.nextOccurrence=nextDate;
   rec.lastGenerated=nextDate;
@@ -1293,8 +1300,11 @@ function renderListView(c){
   const pct=total?Math.round(doneCount/total*100):0;
 
   // Apply status filter
-  const sf=ui.statusFilter||'all';
-  const filtered=sf==='all'?allT:allT.filter(t=>t.status===sf);
+  const sf=ui.statusFilter||'active';
+  const activeCount=allT.filter(t=>t.status!=='done').length;
+  const filtered=sf==='active'?allT.filter(t=>t.status!=='done')
+                :sf==='all'?allT
+                :allT.filter(t=>t.status===sf);
 
   // For "all" view: group by project; otherwise flat list
   const showProjects=isAll||ui.view==='company';
@@ -1387,6 +1397,7 @@ function renderListView(c){
   <!-- STATUS FILTER -->
   <div class="status-filter-bar">
     <span style="font-size:12px;color:var(--text3);font-weight:600">絞り込み：</span>
+    <button class="sf-btn ${sf==='active'?'active':''}" data-s="active" onclick="setStatusFilter('active')">未完了 (${activeCount})</button>
     <button class="sf-btn ${sf==='all'?'active':''}" data-s="all" onclick="setStatusFilter('all')">すべて (${total})</button>
     <button class="sf-btn ${sf==='todo'?'active':''}" data-s="todo" onclick="setStatusFilter('todo')">○ 未着手 (${todoCount})</button>
     <button class="sf-btn ${sf==='doing'?'active':''}" data-s="doing" onclick="setStatusFilter('doing')">◑ 進行中 (${doingCount})</button>
@@ -4653,6 +4664,8 @@ function doAddTask(){
     const base=addDays(today(),-1);
     const first=getNextRecurrenceDate(rec,base);
     rec.nextOccurrence=first||today();
+    // Snapshot todos as template for future occurrences
+    rec.todoTemplate=(t.todos||[]).map(function(td){return{text:td.text};});
     t.recurrence=rec;
     // For recurring tasks, dates are managed by the recurrence system — blank them out.
     t.actionDate='';
@@ -4776,6 +4789,8 @@ async function doSaveRecurrence(taskId){
   // Compute first occurrence (today qualifies if matches)
   const base=addDays(today(),-1);
   rec.nextOccurrence=getNextRecurrenceDate(rec,base)||today();
+  // Snapshot current todos as template for future occurrences
+  rec.todoTemplate=(r.task.todos||[]).map(function(td){return{text:td.text};});
   r.task.recurrence=rec;
   // Blank out dates — recurrence owns scheduling now
   r.task.actionDate='';
