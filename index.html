@@ -53,9 +53,12 @@ input,textarea,select{font-family:inherit;outline:none}
 .sidebar{width:var(--sidebar);min-width:180px;max-width:480px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;user-select:none;position:relative}
 .sidebar-resize{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;z-index:20}
 .sidebar-resize:hover,.sidebar-resize.dragging{background:var(--accent);opacity:.3}
+.detail-resize{position:absolute;top:0;left:-3px;width:6px;height:100%;cursor:col-resize;z-index:20}
+.detail-resize:hover,.detail-resize.dragging{background:var(--accent);opacity:.3}
+.detail-panel.hidden .detail-resize{display:none}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--surface)}
 .detail-panel{width:var(--detail);background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .25s ease}
-.detail-panel.hidden{width:0;overflow:hidden;border-left:none}
+.detail-panel.hidden{width:0!important;overflow:hidden;border-left:none}
 
 /* ===== SIDEBAR ===== */
 .sidebar-header{padding:12px 14px 6px;display:flex;align-items:center;justify-content:space-between}
@@ -636,7 +639,8 @@ textarea.form-input{resize:vertical;min-height:72px}
 </main>
 
 <!-- DETAIL PANEL -->
-<aside class="detail-panel hidden" id="detailPanel">
+<aside class="detail-panel hidden" id="detailPanel" style="position:relative">
+  <div class="detail-resize" id="detailResize"></div>
   <div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">
     <button class="detail-close" onclick="closeDetail()">✕</button>
     <div class="detail-inner" id="detailInner"></div>
@@ -6330,6 +6334,41 @@ document.addEventListener('keydown',e=>{
   try{
     var saved=localStorage.getItem('stride_sidebarW');
     if(saved){sidebar.style.width=saved+'px';}
+  }catch(e){}
+})();
+
+// ============================================================
+// DETAIL PANEL RESIZE
+// ============================================================
+(function(){
+  var handle=document.getElementById('detailResize');
+  var panel=document.getElementById('detailPanel');
+  if(!handle||!panel) return;
+  var dragging=false,startX=0,startW=0;
+  handle.addEventListener('mousedown',function(e){
+    e.preventDefault();
+    dragging=true;startX=e.clientX;startW=panel.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor='col-resize';
+    document.body.style.userSelect='none';
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    var newW=Math.min(900,Math.max(280,startW-(e.clientX-startX)));
+    panel.style.width=newW+'px';
+  });
+  document.addEventListener('mouseup',function(){
+    if(!dragging)return;
+    dragging=false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor='';
+    document.body.style.userSelect='';
+    try{localStorage.setItem('stride_detailW',panel.offsetWidth);}catch(e){}
+  });
+  // Restore saved width
+  try{
+    var saved=localStorage.getItem('stride_detailW');
+    if(saved){panel.style.width=saved+'px';}
   }catch(e){}
 })();
 
