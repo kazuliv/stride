@@ -576,6 +576,16 @@ textarea.form-input{resize:vertical;min-height:72px}
       </div>
     </div>
   </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-label" style="display:flex;align-items:center">
+      <span style="flex:1">メモ</span>
+      <button class="btn-icon" onclick="openAddMemo()" title="メモを追加">＋</button>
+    </div>
+    <div class="nav-row" id="nav-memos" onclick="navTo('memos',null,null,null,this)">
+      <span class="nav-icon">📝</span><span class="nav-label">メモ</span>
+      <span class="nav-badge" id="badge-memos" style="display:none">0</span>
+    </div>
+  </div>
   <div class="sidebar-section" style="flex:1;overflow-y:auto;min-height:0">
     <div class="sidebar-section-label" style="display:flex;align-items:center">
       <span style="flex:1">企業・プロジェクト</span>
@@ -674,6 +684,7 @@ let state = {
   gcalEmailId: '',
   gdriveConnected: false,
   gdriveFiles: [],
+  memos: [],      // Memos: [{id, title, content, companyId?, projectId?, taskId?, status:'active'|'archived', created, updated}]
 };
 
 // Google Calendar API configuration
@@ -715,6 +726,7 @@ function load(){
       if(d.ui.ganttZoom)ui.ganttZoom=d.ui.ganttZoom;
     }
     if(!state.kanban)state.kanban={groupBy:'status',columns:null};
+    if(!state.memos)state.memos=[];
   }catch(e){}
   if(!state.companies.length)seedDemo();
 }
@@ -1222,6 +1234,10 @@ function updateBadges(){
   // Include delegated check items in today count
   const todayDelegated=(state.delegated||[]).filter(d=>!d.done&&d.checkDate&&d.checkDate<=todayStr);
   document.getElementById('badge-today').textContent=todayActions.length+todayTodos.length+todayDelegated.length;
+  // Memo badge (active memos)
+  const mb=document.getElementById('badge-memos');
+  const memoCount=(state.memos||[]).filter(m=>m.status!=='archived').length;
+  if(mb){mb.textContent=memoCount;mb.style.display=memoCount?'':'none';}
 }
 
 // ===== CONTENT =====
@@ -1230,6 +1246,7 @@ function renderContent(){
   c.className='content';
   c.style.padding='';c.style.display='';c.style.flexDirection='';c.style.overflow='';
   if(ui.view==='inbox'){renderInbox(c);return}
+  if(ui.view==='memos'){renderMemos(c);return}
   if(ui.view==='delegated'){renderDelegated(c);return}
   if(ui.view==='home'){renderHome(c);return}
   if(ui.view==='calplan'){renderCalendarPlan(c);return}
@@ -2261,6 +2278,353 @@ function doInboxDelegate(inboxId){
   state.inbox=state.inbox.filter(x=>x.id!==inboxId);
   save();closeModal();updateBadges();renderAll();
   showToast('📤 「'+esc(item.text)+'」を '+esc(to)+' に委任しました');
+}
+
+// ===== MEMOS =====
+function memoFilter(){return ui.memoFilter||'active'}
+function setMemoFilter(f){ui.memoFilter=f;renderContent()}
+
+function renderMemos(container){
+  if(!state.memos)state.memos=[];
+  const filter=memoFilter();
+  const list=state.memos.filter(m=>filter==='archived'?m.status==='archived':m.status!=='archived')
+    .sort((a,b)=>(b.updated||b.created||0)-(a.updated||a.created||0));
+  const activeCount=state.memos.filter(m=>m.status!=='archived').length;
+  const archivedCount=state.memos.filter(m=>m.status==='archived').length;
+  let h='<div style="max-width:760px;margin:0 auto;padding:20px">';
+  h+='<div style="display:flex;align-items:center;margin-bottom:16px;gap:12px">';
+  h+='<div style="flex:1"><div style="font-size:20px;font-weight:700">📝 メモ</div>';
+  h+='<div style="font-size:12px;color:var(--text3);margin-top:4px">思いついたことを残す。あとでタスク化・アーカイブ</div></div>';
+  h+='<button class="btn btn-ghost" onclick="exportMemosCsv()" title="すべてのメモをCSV出力">📥 CSV</button>';
+  h+='<button class="btn btn-primary" onclick="openAddMemo()">＋ 新規メモ</button>';
+  h+='</div>';
+  h+='<div style="display:flex;gap:6px;margin-bottom:12px">';
+  h+='<button class="btn '+(filter==='active'?'btn-primary':'btn-ghost')+' btn-sm" onclick="setMemoFilter(\'active\')">アクティブ '+activeCount+'</button>';
+  h+='<button class="btn '+(filter==='archived'?'btn-primary':'btn-ghost')+' btn-sm" onclick="setMemoFilter(\'archived\')">アーカイブ '+archivedCount+'</button>';
+  h+='</div>';
+  if(!list.length){
+    h+='<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">'+(filter==='archived'?'アーカイブはありません':'メモはまだありません ✨')+'</div>';
+  } else {
+    for(const m of list){
+      const link=memoLinkLabel(m);
+      const age=memoAgeLabel(m);
+      const contentPreview=(m.content||'').split('\n').slice(0,4).join('\n');
+      h+='<div class="memo-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:10px">';
+      h+='<div style="display:flex;align-items:flex-start;gap:8px">';
+      h+='<div style="flex:1;min-width:0;cursor:pointer" onclick="openEditMemo(\''+m.id+'\')">';
+      h+='<div style="font-weight:600;font-size:14px;margin-bottom:4px">'+(esc(m.title)||'<span style="color:var(--text3);font-weight:normal">（タイトルなし）</span>')+'</div>';
+      if(contentPreview)h+='<div style="font-size:12px;color:var(--text2);white-space:pre-wrap;word-break:break-word;line-height:1.5">'+esc(contentPreview)+(m.content&&m.content.split('\n').length>4?' …':'')+'</div>';
+      h+='<div style="display:flex;gap:8px;margin-top:6px;font-size:11px;color:var(--text3)">';
+      if(link)h+='<span>'+link+'</span>';
+      h+='<span>'+age+'</span>';
+      h+='</div>';
+      h+='</div>';
+      h+='<div style="display:flex;flex-direction:column;gap:4px">';
+      if(m.status!=='archived'){
+        h+='<button class="btn btn-ghost btn-sm" onclick="memoToTask(\''+m.id+'\')" title="タスク化">📋 タスク化</button>';
+        h+='<button class="btn btn-ghost btn-sm" onclick="memoArchive(\''+m.id+'\')" title="アーカイブ">📦 アーカイブ</button>';
+      } else {
+        h+='<button class="btn btn-ghost btn-sm" onclick="memoUnarchive(\''+m.id+'\')" title="戻す">↩ 戻す</button>';
+      }
+      h+='<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="memoDelete(\''+m.id+'\')" title="削除">🗑</button>';
+      h+='</div>';
+      h+='</div>';
+      h+='</div>';
+    }
+  }
+  h+='</div>';
+  container.innerHTML=h;
+}
+
+function memoAgeLabel(m){
+  const ts=m.updated||m.created||Date.now();
+  const age=Math.round((Date.now()-ts)/86400000);
+  return age===0?'今日':age+'日前';
+}
+function memoLinkLabel(m){
+  if(m.taskId){
+    const r=getTask(m.taskId);
+    if(r)return '📋 '+esc(r.company.name)+' / '+esc(r.project.name)+' / '+esc(r.task.title);
+  }
+  if(m.projectId){
+    const c=getCompany(m.companyId);
+    const p=c?.projects.find(x=>x.id===m.projectId);
+    if(p)return '📁 '+esc(c.name)+' / '+esc(p.name);
+  }
+  if(m.companyId){
+    const c=getCompany(m.companyId);
+    if(c)return '🏢 '+esc(c.name);
+  }
+  return '';
+}
+
+function openAddMemo(){openModal('addMemo')}
+function openEditMemo(id){
+  ui.selectedMemoId=id;
+  renderMemoDetail(id);
+}
+
+function renderMemoDetail(id){
+  const m=(state.memos||[]).find(x=>x.id===id);if(!m)return;
+  const panel=document.getElementById('detailPanel');
+  const inner=document.getElementById('detailInner');
+  panel.classList.remove('hidden');
+  const companyOpts='<option value="">（紐付けなし）</option>'+state.companies.map(c=>'<option value="'+c.id+'"'+(c.id===m.companyId?' selected':'')+'>'+esc(c.name)+'</option>').join('');
+  const c=m.companyId?getCompany(m.companyId):null;
+  const projOpts='<option value="">（プロジェクトなし）</option>'+((c?.projects||[]).map(p=>'<option value="'+p.id+'"'+(p.id===m.projectId?' selected':'')+'>'+esc(p.name)+'</option>').join(''));
+  const p=(m.companyId&&m.projectId)?getProject(m.companyId,m.projectId):null;
+  const taskOpts='<option value="">（タスクなし）</option>'+((p?.tasks||[]).map(t=>'<option value="'+t.id+'"'+(t.id===m.taskId?' selected':'')+'>'+esc(t.title)+'</option>').join(''));
+  const linked=memoLinkLabel(m);
+  const isArchived=m.status==='archived';
+  inner.innerHTML=`
+  <div class="detail-header">
+    <button class="detail-close" onclick="closeMemoDetail()">✕</button>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <span class="tag" style="font-size:11px">📝 メモ</span>
+      ${isArchived?'<span class="tag" style="font-size:11px;background:var(--bg2);color:var(--text3)">アーカイブ</span>':''}
+    </div>
+    <div contenteditable="true" class="detail-title" id="det-memo-title" onblur="saveMemoField('${id}','title',this.textContent)">${esc(m.title||'')}</div>
+    ${!m.title?'<div style="font-size:11px;color:var(--text3);margin-top:4px">タイトルを入力...</div>':''}
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-label">内容</div>
+    <textarea class="form-input" id="det-memo-content" rows="10" style="width:100%;resize:vertical" onblur="saveMemoField('${id}','content',this.value)" placeholder="自由記述...">${esc(m.content||'')}</textarea>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-label">紐付け</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <select class="detail-select" id="det-memo-cid" onchange="saveMemoLink('${id}')">${companyOpts}</select>
+      <select class="detail-select" id="det-memo-pid" onchange="saveMemoLink('${id}')">${projOpts}</select>
+      <select class="detail-select" id="det-memo-tid" onchange="saveMemoLink('${id}')">${taskOpts}</select>
+    </div>
+    ${linked?`<div style="font-size:11px;color:var(--text3);margin-top:6px">現在: ${linked}</div>`:''}
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-label">アクション</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${!isArchived?`<button class="btn btn-primary btn-sm" onclick="memoToTask('${id}')">📋 タスク化</button>`:''}
+      ${!isArchived?`<button class="btn btn-ghost btn-sm" onclick="memoArchive('${id}')">📦 アーカイブ</button>`:`<button class="btn btn-ghost btn-sm" onclick="memoUnarchive('${id}')">↩ 戻す</button>`}
+      <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="memoDelete('${id}')">🗑 削除</button>
+    </div>
+  </div>
+  `;
+}
+
+function closeMemoDetail(){
+  ui.selectedMemoId=null;
+  document.getElementById('detailPanel').classList.add('hidden');
+}
+
+function saveMemoField(id,field,value){
+  const m=(state.memos||[]).find(x=>x.id===id);if(!m)return;
+  if(m[field]===value)return;
+  m[field]=(field==='title')?(value||'').trim():value;
+  m.updated=Date.now();
+  save();renderAll();
+}
+
+function saveMemoLink(id){
+  const m=(state.memos||[]).find(x=>x.id===id);if(!m)return;
+  const cid=document.getElementById('det-memo-cid')?.value||'';
+  const pid=document.getElementById('det-memo-pid')?.value||'';
+  const tid=document.getElementById('det-memo-tid')?.value||'';
+  m.companyId=cid||null;
+  m.projectId=pid||null;
+  m.taskId=tid||null;
+  m.updated=Date.now();
+  save();
+  renderMemoDetail(id);
+  renderContent();
+}
+
+function buildMemoModal(memoId){
+  const m=memoId?(state.memos||[]).find(x=>x.id===memoId):null;
+  const title=m?.title||'';
+  const content=m?.content||'';
+  const cid=m?.companyId||'';
+  const pid=m?.projectId||'';
+  const tid=m?.taskId||'';
+  const isEdit=!!m;
+  const companyOpts='<option value="">（紐付けなし）</option>'+state.companies.map(c=>'<option value="'+c.id+'"'+(c.id===cid?' selected':'')+'>'+esc(c.name)+'</option>').join('');
+  const projOpts=cid?('<option value="">（プロジェクトなし）</option>'+(getCompany(cid)?.projects||[]).map(p=>'<option value="'+p.id+'"'+(p.id===pid?' selected':'')+'>'+esc(p.name)+'</option>').join('')):'<option value="">（先に企業を選択）</option>';
+  const taskOpts=(cid&&pid)?('<option value="">（タスクなし）</option>'+(getProject(cid,pid)?.tasks||[]).map(t=>'<option value="'+t.id+'"'+(t.id===tid?' selected':'')+'>'+esc(t.title)+'</option>').join('')):'<option value="">（先にプロジェクトを選択）</option>';
+  return '<div class="modal-title">'+(isEdit?'📝 メモを編集':'📝 メモを追加')+'<span class="modal-close" onclick="closeModal()">✕</span></div>'+
+    '<div class="form-group"><label class="form-label">タイトル</label><input class="form-input" id="m-memo-title" value="'+esc(title)+'" placeholder="例：競合リサーチのアイデア"></div>'+
+    '<div class="form-group"><label class="form-label">内容</label><textarea class="form-input" id="m-memo-content" rows="6" placeholder="自由記述...">'+esc(content)+'</textarea></div>'+
+    '<div class="form-row">'+
+      '<div class="form-group"><label class="form-label">企業（任意）</label><select class="form-input form-select" id="m-memo-cid" onchange="memoModalRefresh()">'+companyOpts+'</select></div>'+
+      '<div class="form-group"><label class="form-label">プロジェクト（任意）</label><select class="form-input form-select" id="m-memo-pid" onchange="memoModalRefreshTasks()">'+projOpts+'</select></div>'+
+    '</div>'+
+    '<div class="form-group"><label class="form-label">タスク（任意）</label><select class="form-input form-select" id="m-memo-tid">'+taskOpts+'</select></div>'+
+    '<div class="modal-actions" style="justify-content:space-between">'+
+      (isEdit?'<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="memoDelete(\''+m.id+'\',true)">🗑 削除</button>':'<span></span>')+
+      '<div style="display:flex;gap:6px"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>'+
+      '<button class="btn btn-primary" onclick="'+(isEdit?'doEditMemo(\''+m.id+'\')':'doAddMemo()')+'">保存</button></div>'+
+    '</div>';
+}
+function memoModalRefresh(){
+  const cid=document.getElementById('m-memo-cid')?.value||'';
+  const c=getCompany(cid);
+  const psel=document.getElementById('m-memo-pid');
+  if(psel)psel.innerHTML='<option value="">（プロジェクトなし）</option>'+((c?.projects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join(''));
+  const tsel=document.getElementById('m-memo-tid');
+  if(tsel)tsel.innerHTML='<option value="">（先にプロジェクトを選択）</option>';
+}
+function memoModalRefreshTasks(){
+  const cid=document.getElementById('m-memo-cid')?.value||'';
+  const pid=document.getElementById('m-memo-pid')?.value||'';
+  const p=(cid&&pid)?getProject(cid,pid):null;
+  const tsel=document.getElementById('m-memo-tid');
+  if(tsel)tsel.innerHTML='<option value="">（タスクなし）</option>'+((p?.tasks||[]).map(t=>'<option value="'+t.id+'">'+esc(t.title)+'</option>').join(''));
+}
+function readMemoForm(){
+  const title=document.getElementById('m-memo-title')?.value.trim()||'';
+  const content=document.getElementById('m-memo-content')?.value||'';
+  const cid=document.getElementById('m-memo-cid')?.value||'';
+  const pid=document.getElementById('m-memo-pid')?.value||'';
+  const tid=document.getElementById('m-memo-tid')?.value||'';
+  return {title,content,companyId:cid||null,projectId:pid||null,taskId:tid||null};
+}
+function doAddMemo(){
+  const d=readMemoForm();
+  if(!d.title&&!d.content){showToast('タイトルか内容を入力してください','error');return;}
+  if(!state.memos)state.memos=[];
+  state.memos.push({id:uid(),title:d.title,content:d.content,companyId:d.companyId,projectId:d.projectId,taskId:d.taskId,status:'active',created:Date.now(),updated:Date.now()});
+  save();closeModal();
+  if(ui.view!=='memos')navTo('memos',null,null,null,document.getElementById('nav-memos'));
+  else renderAll();
+  showToast('📝 メモを追加しました');
+}
+function doEditMemo(id){
+  const m=(state.memos||[]).find(x=>x.id===id);if(!m)return;
+  const d=readMemoForm();
+  m.title=d.title;m.content=d.content;m.companyId=d.companyId;m.projectId=d.projectId;m.taskId=d.taskId;m.updated=Date.now();
+  save();closeModal();renderAll();
+  showToast('📝 メモを更新しました');
+}
+function memoArchive(id){
+  const m=(state.memos||[]).find(x=>x.id===id);if(!m)return;
+  m.status='archived';m.updated=Date.now();save();
+  if(ui.selectedMemoId===id)renderMemoDetail(id);
+  renderAll();showToast('📦 アーカイブしました');
+}
+function memoUnarchive(id){
+  const m=(state.memos||[]).find(x=>x.id===id);if(!m)return;
+  m.status='active';m.updated=Date.now();save();
+  if(ui.selectedMemoId===id)renderMemoDetail(id);
+  renderAll();showToast('↩ 戻しました');
+}
+function memoDelete(id){
+  const m=(state.memos||[]).find(x=>x.id===id);if(!m)return;
+  if(!confirm('このメモを削除しますか？'))return;
+  state.memos=state.memos.filter(x=>x.id!==id);
+  if(ui.selectedMemoId===id)closeMemoDetail();
+  save();renderAll();showToast('🗑 メモを削除しました');
+}
+function memoToTask(id){
+  const m=(state.memos||[]).find(x=>x.id===id);if(!m)return;
+  // If already linked to a project, create task directly
+  if(m.companyId&&m.projectId){
+    const c=getCompany(m.companyId);
+    const p=c?.projects.find(x=>x.id===m.projectId);
+    if(p){
+      const t={
+        id:uid(),title:m.title||(m.content||'').split('\n')[0]||'無題',
+        priority:'med',status:'todo',
+        startDate:'',dueDate:'',actionDate:'',
+        note:m.content||'',
+        gcal:false,gcalMode:'',gcalCalId:'',gdocUrl:'',
+        todos:[],created:Date.now(),
+      };
+      p.tasks.push(t);
+      m.status='archived';m.taskId=t.id;m.updated=Date.now();
+      save();renderAll();
+      showToast('📋 タスク化しました: '+esc(c.name)+' / '+esc(p.name));
+      return;
+    }
+  }
+  // Otherwise open picker modal
+  openModal('memoToTask',id);
+}
+function buildMemoToTaskModal(memoId){
+  const m=(state.memos||[]).find(x=>x.id===memoId);
+  if(!m)return '<div>メモが見つかりません</div>';
+  return '<div class="modal-title">📋 メモをタスク化<span class="modal-close" onclick="closeModal()">✕</span></div>'+
+    '<div style="padding:10px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px;font-size:13px;font-weight:500">'+esc(m.title||'（無題）')+'</div>'+
+    '<div class="form-group"><label class="form-label">企業</label>'+
+    '<select class="form-input form-select" id="mt-cid" onchange="mtRefreshProjects()">'+
+      state.companies.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('')+
+    '</select></div>'+
+    '<div class="form-group"><label class="form-label">プロジェクト</label>'+
+    '<select class="form-input form-select" id="mt-pid">'+
+      (state.companies[0]?.projects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('')+
+    '</select></div>'+
+    '<div class="form-group"><label class="form-label">優先度</label>'+
+    '<select class="form-input form-select" id="mt-pri"><option value="med" selected>🟡 中</option><option value="high">🔴 高</option><option value="low">🟢 低</option></select></div>'+
+    '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>'+
+    '<button class="btn btn-primary" onclick="doMemoToTask(\''+memoId+'\')">タスク化</button></div>';
+}
+function mtRefreshProjects(){
+  const cid=document.getElementById('mt-cid')?.value;
+  const c=getCompany(cid);
+  const sel=document.getElementById('mt-pid');
+  if(sel)sel.innerHTML=(c?.projects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+}
+function doMemoToTask(memoId){
+  const m=(state.memos||[]).find(x=>x.id===memoId);if(!m)return;
+  const cid=document.getElementById('mt-cid')?.value;
+  const pid=document.getElementById('mt-pid')?.value;
+  const c=getCompany(cid);const p=c?.projects.find(x=>x.id===pid);
+  if(!p){showToast('プロジェクトを選択してください','error');return;}
+  const t={
+    id:uid(),title:m.title||(m.content||'').split('\n')[0]||'無題',
+    priority:document.getElementById('mt-pri')?.value||'med',
+    status:'todo',startDate:'',dueDate:'',actionDate:'',
+    note:m.content||'',
+    gcal:false,gcalMode:'',gcalCalId:'',gdocUrl:'',
+    todos:[],created:Date.now(),
+  };
+  p.tasks.push(t);
+  m.status='archived';m.taskId=t.id;m.companyId=c.id;m.projectId=p.id;m.updated=Date.now();
+  save();closeModal();renderAll();
+  showToast('📋 タスク化: '+esc(c.name)+' / '+esc(p.name));
+}
+
+function exportMemosCsv(){
+  const memos=state.memos||[];
+  if(!memos.length){showToast('メモがありません','error');return;}
+  const todayStr=today();
+  const statusMap={active:'アクティブ',archived:'アーカイブ'};
+  const headers=['タイトル','内容','企業','プロジェクト','タスク','ステータス','作成日時','更新日時'];
+  const fmtTs=ts=>{if(!ts)return'';const d=new Date(ts);const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())};
+  const rows=memos.map(m=>{
+    const c=m.companyId?getCompany(m.companyId):null;
+    const p=(m.companyId&&m.projectId)?getProject(m.companyId,m.projectId):null;
+    let taskTitle='';
+    if(m.taskId){const r=getTask(m.taskId);if(r)taskTitle=r.task.title;}
+    return [
+      m.title||'',
+      m.content||'',
+      c?.name||'',
+      p?.name||'',
+      taskTitle,
+      statusMap[m.status]||m.status||'',
+      fmtTs(m.created),
+      fmtTs(m.updated),
+    ];
+  });
+  const csvEsc=v=>{const s=String(v??'');return s.includes(',')||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;};
+  const csv='\uFEFF'+[headers.map(csvEsc).join(','),...rows.map(r=>r.map(csvEsc).join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='stride_memos_'+todayStr+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  URL.revokeObjectURL(url);
+  showToast('メモ'+memos.length+'件をCSVでダウンロードしました');
 }
 
 // ===== DELEGATED LIST =====
@@ -4006,6 +4370,8 @@ function buildModal(type,...args){
   if(type==='recurrence')return buildRecurrenceModal(args[0]);
   if(type==='inboxClassify')return buildInboxClassify(args[0]);
   if(type==='inboxDelegate')return buildInboxDelegate(args[0]);
+  if(type==='addMemo')return buildMemoModal();
+  if(type==='memoToTask')return buildMemoToTaskModal(args[0]);
   return'';
 }
 
