@@ -844,8 +844,7 @@ async function generateRecurringTasks(){
   let updated=false;
 
   // --- Migration: existing recurring tasks without nextOccurrence ---
-  // Copy actionDate → recurrence.nextOccurrence, blank out actionDate/dueDate/startDate.
-  // If nextOccurrence is in the future, set status='scheduled'; otherwise keep as 'todo'.
+  // Copy actionDate → recurrence.nextOccurrence, blank out dates, snapshot todo template, clear logs.
   for(const c of state.companies){
     for(const p of c.projects){
       for(const t of p.tasks){
@@ -859,9 +858,32 @@ async function generateRecurringTasks(){
         t.actionDate='';
         t.dueDate='';
         t.startDate='';
+        t.actionLogs=[];
         if(t.status==='done'||base>todayStr){t.status='scheduled';}
         if(t.todos){t.todos.forEach(function(td){td.actionDate='';});}
         updated=true;
+      }
+    }
+  }
+
+  // --- Backfill: scheduled recurring tasks with stale content from pre-template era ---
+  // Ensure todoTemplate exists and reset todos+logs so they reflect a clean next occurrence.
+  for(const c of state.companies){
+    for(const p of c.projects){
+      for(const t of p.tasks){
+        if(!t.recurrence||!t.recurrence.enabled)continue;
+        if(t.status!=='scheduled')continue;
+        if(!t.recurrence.todoTemplate){
+          t.recurrence.todoTemplate=(t.todos||[]).map(function(td){return{text:td.text};});
+        }
+        const hasStaleLogs=(t.actionLogs||[]).length>0;
+        const staleTodo=(t.todos||[]).some(function(td){return td.done||td.actionDate;});
+        const countMismatch=(t.todos||[]).length!==(t.recurrence.todoTemplate||[]).length;
+        if(hasStaleLogs||staleTodo||countMismatch){
+          t.todos=(t.recurrence.todoTemplate||[]).map(function(td){return{id:uid(),text:td.text,done:false,actionDate:''};});
+          t.actionLogs=[];
+          updated=true;
+        }
       }
     }
   }
