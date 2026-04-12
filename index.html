@@ -143,6 +143,7 @@ input,textarea,select{font-family:inherit;outline:none}
 .sf-btn[data-s="todo"].active{background:#6b6860}
 .sf-btn[data-s="doing"].active{background:var(--accent4)}
 .sf-btn[data-s="done"].active{background:var(--green)}
+.sf-btn[data-s="scheduled"].active{background:#8a6fb0}
 
 /* ===== LIST DnD ===== */
 .task-item{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:var(--radius-sm);cursor:pointer;transition:background .1s,border-color .1s,transform .1s;border:1px solid transparent;position:relative;user-select:none}
@@ -192,6 +193,7 @@ input,textarea,select{font-family:inherit;outline:none}
 .tag-status-todo{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
 .tag-status-doing{background:#fff8e8;color:var(--accent4);border:1px solid #f5e4b0}
 .tag-status-done{background:#edfbf4;color:var(--green);border:1px solid #b6ecd0}
+.tag-status-scheduled{background:#f2ecf8;color:#6b4a9a;border:1px solid #d9c9ee}
 .todo-list{margin-top:6px;display:flex;flex-direction:column;gap:3px}
 .todo-item{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text2)}
 .todo-check{width:13px;height:13px;border-radius:3px;border:1.5px solid var(--border2);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all .12s}
@@ -825,29 +827,66 @@ async function generateRecurringTasks(){
   }
   if(cleaned){save();}
 
-  // For recurring tasks whose actionDate is past and status is 'done',
-  // reset to next occurrence date automatically.
   const todayStr=today();
   let updated=false;
+
+  // --- Migration: existing recurring tasks without nextOccurrence ---
+  // Copy actionDate → recurrence.nextOccurrence, blank out actionDate/dueDate/startDate.
+  // If nextOccurrence is in the future, set status='scheduled'; otherwise keep as 'todo'.
   for(const c of state.companies){
     for(const p of c.projects){
       for(const t of p.tasks){
         if(!t.recurrence||!t.recurrence.enabled)continue;
-        // If task is done and actionDate is past or today, advance to next date
-        if(t.status==='done'&&t.actionDate&&t.actionDate<=todayStr){
-          await advanceRecurringTask(t,c,p);
-          updated=true;
-        }
-        // If actionDate is past but not done, keep it (user hasn't completed it yet)
+        if(t.recurrence.nextOccurrence)continue;// already migrated
+        const base=t.actionDate||t.dueDate||t.startDate||todayStr;
+        t.recurrence.nextOccurrence=base;
+        t.actionDate='';
+        t.dueDate='';
+        t.startDate='';
+        if(t.status==='done'||base>todayStr){t.status='scheduled';}
+        if(t.todos){t.todos.forEach(function(td){td.actionDate='';});}
+        updated=true;
       }
     }
   }
+
+  // --- Auto-advance: done recurring tasks → scheduled for next occurrence ---
+  for(const c of state.companies){
+    for(const p of c.projects){
+      for(const t of p.tasks){
+        if(!t.recurrence||!t.recurrence.enabled)continue;
+        if(t.status==='done'){
+          await advanceRecurringTask(t,c,p);
+          updated=true;
+        }
+      }
+    }
+  }
+
+  // --- Scheduled → todo when occurrence date has arrived ---
+  for(const c of state.companies){
+    for(const p of c.projects){
+      for(const t of p.tasks){
+        if(!t.recurrence||!t.recurrence.enabled)continue;
+        if(t.status==='scheduled'&&t.recurrence.nextOccurrence&&t.recurrence.nextOccurrence<=todayStr){
+          t.status='todo';
+          t.actionDate='';
+          t.dueDate='';
+          t.startDate='';
+          if(t.todos){t.todos.forEach(function(td){td.done=false;td.actionDate='';});}
+          t.actionLogs=[];
+          updated=true;
+        }
+      }
+    }
+  }
+
   if(updated){save();renderAll();}
 }
 
 async function advanceRecurringTask(task,company,project){
   const rec=task.recurrence;
-  const baseDate=task.actionDate||today();
+  const baseDate=rec.nextOccurrence||task.actionDate||today();
   const nextDate=getNextRecurrenceDate(rec,baseDate);
   if(!nextDate) return;
 
@@ -862,29 +901,23 @@ async function advanceRecurringTask(task,company,project){
     if(task.gcalEventIdDue){
       try{await gcalApiFetch('https://www.googleapis.com/calendar/v3/calendars/'+calId+'/events/'+task.gcalEventIdDue,{method:'DELETE'});}catch(e){console.error('GCal delete old due event:',e);}
     }
-    // Clear GCal event IDs only after successful deletion
     task.gcalEventId='';
     task.gcalEventIdDue='';
   }
-  // If no token, keep old gcalEventId — syncGcalByMode will PATCH it later with the new date
 
-  // Reset task for next occurrence
-  task.status='todo';
-  task.actionDate=nextDate;
-  task.dueDate=nextDate;
-  task.startDate=nextDate;
-  // Reset todos to undone
+  // Schedule next occurrence: blank dates, user sets actionDate on occurrence day
+  task.status='scheduled';
+  task.actionDate='';
+  task.dueDate='';
+  task.startDate='';
   if(task.todos){
-    task.todos.forEach(function(td){td.done=false;td.actionDate=nextDate;});
+    task.todos.forEach(function(td){td.done=false;td.actionDate='';});
   }
-  // Clear old action logs
   task.actionLogs=[];
+  rec.nextOccurrence=nextDate;
   rec.lastGenerated=nextDate;
 
-  // Create/update GCal events for the next occurrence
-  if(task.gcal&&hasToken){
-    await syncGcalByMode(task,company,project);
-  }
+  // Note: no GCal sync here — no dates to sync until user sets actionDate
 }
 
 function recurrenceLabel(rec){
@@ -1236,6 +1269,7 @@ function renderListView(c){
   const doneCount=allT.filter(t=>t.status==='done').length;
   const todoCount=allT.filter(t=>t.status==='todo').length;
   const doingCount=allT.filter(t=>t.status==='doing').length;
+  const scheduledCount=allT.filter(t=>t.status==='scheduled').length;
   const overdue=allT.filter(t=>t.dueDate&&t.dueDate<today()&&t.status!=='done').length;
   const high=allT.filter(t=>t.priority==='high'&&t.status!=='done').length;
   const gcalCount=allT.filter(t=>t.gcal).length;
@@ -1299,7 +1333,7 @@ function renderListView(c){
     }
   } else {
     // Flat list grouped by status
-    const statuses=[{key:'todo',label:'未着手',icon:'○'},{key:'doing',label:'進行中',icon:'◑'},{key:'done',label:'完了',icon:'●'}];
+    const statuses=[{key:'todo',label:'未着手',icon:'○'},{key:'doing',label:'進行中',icon:'◑'},{key:'done',label:'完了',icon:'●'},{key:'scheduled',label:'予約（定期）',icon:'🔄'}];
     bodyHTML=statuses.map(s=>{
       const st=filtered.filter(t=>t.status===s.key);
       if(!st.length)return'';
@@ -1340,6 +1374,7 @@ function renderListView(c){
     <button class="sf-btn ${sf==='todo'?'active':''}" data-s="todo" onclick="setStatusFilter('todo')">○ 未着手 (${todoCount})</button>
     <button class="sf-btn ${sf==='doing'?'active':''}" data-s="doing" onclick="setStatusFilter('doing')">◑ 進行中 (${doingCount})</button>
     <button class="sf-btn ${sf==='done'?'active':''}" data-s="done" onclick="setStatusFilter('done')">● 完了 (${doneCount})</button>
+    <button class="sf-btn ${sf==='scheduled'?'active':''}" data-s="scheduled" onclick="setStatusFilter('scheduled')">🔄 予約 (${scheduledCount})</button>
   </div>
   ${bodyHTML}`;
 
@@ -2418,10 +2453,10 @@ function buildCalplanTaskList(){
     h+='<div class="calplan-group-header"><span style="color:'+g.companyColor+'">●</span> '+esc(g.companyName)+' / '+esc(g.projectName)+' <span style="font-size:11px;color:var(--text3);font-weight:400">('+g.tasks.length+')</span></div>';
     for(const t of g.tasks){
       const priIcon={high:'🔴',med:'🟡',low:'🟢'}[t.priority]||'';
-      const statusColor={todo:'var(--text3)',doing:'var(--accent)',done:'var(--green)'}[t.status]||'var(--text3)';
+      const statusColor={todo:'var(--text3)',doing:'var(--accent)',done:'var(--green)',scheduled:'#8a6fb0'}[t.status]||'var(--text3)';
       const isDone=t.status==='done';
       h+='<div class="calplan-task"'+(isDone?' style="opacity:0.55"':'')+'>';
-      h+='<div class="calplan-status" style="background:'+statusColor+'" title="'+({todo:'未着手',doing:'進行中',done:'完了'}[t.status]||'')+'"></div>';
+      h+='<div class="calplan-status" style="background:'+statusColor+'" title="'+({todo:'未着手',doing:'進行中',done:'完了',scheduled:'予約'}[t.status]||'')+'"></div>';
       h+='<div class="calplan-pri">'+priIcon+'</div>';
       h+='<div class="calplan-task-title" onclick="selectTask(\''+t.id+'\')" title="'+esc(t.title)+'"'+(isDone?' style="text-decoration:line-through"':'')+'>'+esc(t.title)+'</div>';
       h+='<div class="calplan-dates">';
@@ -2554,7 +2589,7 @@ function taskItemHTML(t, inProjectList=false){
         ${showCompany&&!inProjectList?`<span class="tag tag-company" style="background:${t.companyColor}18;color:${t.companyColor}">${esc(t.companyName)}</span>`:''}
         ${showProject&&!inProjectList?`<span class="tag tag-project">${esc(t.projectName)}</span>`:''}
         <span class="tag tag-priority-${t.priority}">${{high:'🔴 高',med:'🟡 中',low:'🟢 低'}[t.priority]}</span>
-        <span class="tag tag-status-${t.status}" style="font-size:11px">${{todo:'○ 未着手',doing:'◑ 進行中',done:'● 完了'}[t.status]}</span>
+        <span class="tag tag-status-${t.status}" style="font-size:11px">${{todo:'○ 未着手',doing:'◑ 進行中',done:'● 完了',scheduled:'🔄 予約'}[t.status]}</span>
         ${t.dueDate?`<span class="tag tag-due ${dc}">📅 ${fmtDate(t.dueDate)}</span>`:''}
         ${t.recurrence?.enabled?'<span class="tag" style="background:#f0e8fb;color:#7c4ddb;font-weight:600">🔄 定期</span>':''}
         ${t.gcal?`<span class="tag tag-gcal">📅 ${{action:'アクション',due:'締切',both:'両方'}[t.gcalMode]||'GCal'}</span>`:''}
@@ -2570,16 +2605,16 @@ function taskItemHTML(t, inProjectList=false){
 
 function cycleStatus(id){
   const r=getTask(id);if(!r)return;
-  const cycle={todo:'doing',doing:'done',done:'todo'};
-  const newStatus=cycle[r.task.status];
+  const cycle={scheduled:'doing',todo:'doing',doing:'done',done:'todo'};
+  const newStatus=cycle[r.task.status]||'doing';
   updateTask(id,{status:newStatus});
-  // If recurring task marked done → advance to next occurrence
+  // If recurring task marked done → schedule next occurrence
   if(newStatus==='done'&&r.task.recurrence&&r.task.recurrence.enabled){
     setTimeout(async function(){
       await advanceRecurringTask(r.task,r.company,r.project);
       save();renderAll();
       if(ui.selectedTaskId===id)renderDetail(id);
-      showToast('🔄 次回: '+r.task.actionDate+' に更新しました');
+      showToast('🔄 次回発生日: '+(r.task.recurrence.nextOccurrence||'')+' に予約しました');
     },500);
   }
   renderAll();
@@ -2816,6 +2851,7 @@ function renderDetail(id){
     <div class="detail-row">
       <select class="detail-select" onchange="saveDetailField('${id}','status',this.value)">
         <option value="todo" ${t.status==='todo'?'selected':''}>○ 未着手</option>
+        <option value="scheduled" ${t.status==='scheduled'?'selected':''}>🔄 予約</option>
         <option value="doing" ${t.status==='doing'?'selected':''}>◑ 進行中</option>
         <option value="done" ${t.status==='done'?'selected':''}>● 完了</option>
       </select>
@@ -2888,7 +2924,8 @@ function renderDetail(id){
         </button>
         ${t.recurrence?.enabled?`<button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--red)" onclick="removeRecurrence('${id}')">解除</button>`:''}
       </div>
-      <div style="font-size:10px;color:var(--text3)">完了時に次回の定期タスクが自動生成されます。カレンダーへの反映は他のタスクと同様に選択できます。</div>
+      ${t.recurrence?.enabled&&t.recurrence.nextOccurrence?`<div style="font-size:11px;color:var(--text2);margin-bottom:4px">📅 次回発生日: <b>${t.recurrence.nextOccurrence}</b></div>`:''}
+      <div style="font-size:10px;color:var(--text3)">発生日に未着手へ自動表示されます。アクション日は空欄で発生するので、ご自身で設定してください。</div>
     </div>
   </div>
 
@@ -3459,6 +3496,7 @@ function getKanbanColumns(tasks){
   const gb=state.kanban.groupBy;
   if(gb==='status'){
     return[
+      {key:'scheduled',label:'予約',color:'#8a6fb0', dot:'#8a6fb0'},
       {key:'todo',  label:'未着手',  color:'#aaa89e', dot:'#aaa89e'},
       {key:'doing', label:'進行中',color:'#d4820e', dot:'#d4820e'},
       {key:'done',  label:'完了',  color:'#27ae60', dot:'#27ae60'},
@@ -3540,7 +3578,7 @@ function kanbanCardHTML(t){
     ${gb==='company'?`<div class="kanban-card-sub">📁 ${esc(t.projectName)}</div>`:''}
     <div class="kanban-card-tags">
       <span class="tag tag-priority-${t.priority}" style="font-size:10px;padding:1px 6px">${{high:'🔴 高',med:'🟡 中',low:'🟢 低'}[t.priority]}</span>
-      ${gb!=='status'?`<span class="tag tag-status-${t.status}" style="font-size:10px;padding:1px 6px">${{todo:'○ 未着手',doing:'◑ 進行中',done:'● 完了'}[t.status]}</span>`:''}
+      ${gb!=='status'?`<span class="tag tag-status-${t.status}" style="font-size:10px;padding:1px 6px">${{todo:'○ 未着手',doing:'◑ 進行中',done:'● 完了',scheduled:'🔄 予約'}[t.status]}</span>`:''}
       ${t.dueDate?`<span class="tag tag-due ${dc}" style="font-size:10px;padding:1px 6px">📅 ${fmtDate(t.dueDate)}</span>`:''}
       ${t.gcal?'<span class="tag tag-gcal" style="font-size:10px;padding:1px 6px">📅</span>':''}
     </div>
@@ -3673,7 +3711,7 @@ function applyKanbanMove(taskId, targetColKey){
   if(gb==='status'){
     const prevStatus=task.status;
     updateTask(taskId,{status:targetColKey});
-    if(prevStatus!==targetColKey)showToast(`「${task.title}」を「${{todo:'未着手',doing:'進行中',done:'完了'}[targetColKey]}」に移動`);
+    if(prevStatus!==targetColKey)showToast(`「${task.title}」を「${{todo:'未着手',doing:'進行中',done:'完了',scheduled:'予約'}[targetColKey]}」に移動`);
   } else if(gb==='company'){
     // Move task to the first project of target company
     const targetCompany=getCompany(targetColKey);
@@ -3735,7 +3773,7 @@ function buildKanbanSettings(){
 function buildKanbanColPreview(){
   const gb=state.kanban.groupBy;
   let cols=[];
-  if(gb==='status') cols=[{label:'未着手',color:'#aaa89e'},{label:'進行中',color:'#d4820e'},{label:'完了',color:'#27ae60'}];
+  if(gb==='status') cols=[{label:'予約',color:'#8a6fb0'},{label:'未着手',color:'#aaa89e'},{label:'進行中',color:'#d4820e'},{label:'完了',color:'#27ae60'}];
   else if(gb==='company') cols=state.companies.map(c=>({label:c.name,color:c.color}));
   else if(gb==='project') cols=state.companies.flatMap(c=>c.projects.map(p=>({label:p.name,color:c.color,sub:c.name})));
   return`<div class="form-label" style="margin-top:4px">プレビュー（${cols.length}列）</div>
@@ -4245,7 +4283,17 @@ function doAddTask(){
     if(recType==='monthly_day'){rec.day=parseInt(document.getElementById('m-trec-day').value);}
     else if(recType==='monthly_weekday'){rec.week=parseInt(document.getElementById('m-trec-week').value);rec.weekday=parseInt(document.getElementById('m-trec-weekday-mw').value);}
     else if(recType==='weekly'){rec.weekday=parseInt(document.getElementById('m-trec-weekday-w').value);}
+    // Compute first occurrence: use yesterday as base so today qualifies if it matches
+    const base=addDays(today(),-1);
+    const first=getNextRecurrenceDate(rec,base);
+    rec.nextOccurrence=first||today();
     t.recurrence=rec;
+    // For recurring tasks, dates are managed by the recurrence system — blank them out.
+    t.actionDate='';
+    t.dueDate='';
+    t.startDate='';
+    // If first occurrence is in the future, mark as scheduled; otherwise todo
+    t.status=(rec.nextOccurrence>today())?'scheduled':'todo';
   }
   p.tasks.push(t);save();
   if(t.gcal&&t.gcalMode){syncGcalByMode(t,c,p);}
@@ -4359,15 +4407,21 @@ async function doSaveRecurrence(taskId){
   const r=getTask(taskId);if(!r)return;
   const rec=getRecurrenceFromModal();
   rec.lastGenerated=today();
+  // Compute first occurrence (today qualifies if matches)
+  const base=addDays(today(),-1);
+  rec.nextOccurrence=getNextRecurrenceDate(rec,base)||today();
   r.task.recurrence=rec;
+  // Blank out dates — recurrence owns scheduling now
+  r.task.actionDate='';
+  r.task.dueDate='';
+  r.task.startDate='';
+  if(r.task.todos){r.task.todos.forEach(function(td){td.actionDate='';});}
+  if(r.task.status!=='done'){
+    r.task.status=(rec.nextOccurrence>today())?'scheduled':'todo';
+  }
   save();closeModal();
   renderDetail(taskId);renderAll();
-  // Sync to Google Calendar as individual event (same as regular tasks)
-  if(r.task.gcal&&state.gcalConnected){
-    await syncGcalByMode(r.task,r.company,r.project);
-  }
   showToast('🔄 定期タスクを設定しました: '+recurrenceLabel(rec));
-  // Generate upcoming instances
   await generateRecurringTasks();
 }
 
