@@ -259,7 +259,8 @@ input,textarea,select{font-family:inherit;outline:none}
 .gcal-hour-line{position:absolute;left:0;right:0;border-top:1px solid var(--border);pointer-events:none}
 .gcal-event{position:absolute;border-radius:6px;padding:3px 6px 3px 8px;font-size:11px;color:var(--text);font-weight:500;overflow:hidden;cursor:pointer;z-index:2;transition:background .12s,box-shadow .12s;line-height:1.35;border-left:4px solid var(--accent);background:var(--accent-light);display:flex;flex-direction:column;gap:0}
 .gcal-event:hover{box-shadow:0 2px 8px rgba(0,0,0,.18);filter:brightness(.97)}
-.gcal-event.layered{box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.gcal-event.layered{box-shadow:0 2px 8px rgba(0,0,0,.25);font-weight:600}
+.gcal-event.layered .gcal-ev-time{color:rgba(255,255,255,.85)}
 .gcal-event .gcal-ev-time{font-size:10px;font-weight:400;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gcal-event .gcal-ev-title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
 .gcal-event.compact .gcal-ev-title,.gcal-event.compact .gcal-ev-time{display:inline;font-size:10px}
@@ -2066,8 +2067,8 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam, targetGridId){
       var dataAttrs=e.isGcal&&e.htmlLink?'data-gcal-link="'+e.htmlLink.replace(/"/g,'&quot;')+'"':'data-task-id="'+e.id+'"';
       var doneStyle=e.isDone?';opacity:0.45;text-decoration:line-through':'';
       var borderColor=e.color;
-      var bgColor=hexToTint(e.color,e._layer>0?0.92:0.15);
-      var textColor=hexToDark(e.color,0.7);
+      var bgColor=e._layer>0?hexToDark(e.color,0.85):hexToTint(e.color,0.15);
+      var textColor=e._layer>0?'#fff':hexToDark(e.color,0.7);
       var isCompact=height<28;
       var timeStr=sTime?(sTime+(eTime?' – '+eTime:'')):'' ;
       var innerHTML=isCompact
