@@ -2036,45 +2036,66 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam, targetGridId){
       var nowTop=(nowH-START_HOUR)*HOUR_H;
       bodyHTML+='<div class="gcal-now-line" style="top:'+nowTop+'px"><div class="gcal-now-dot"></div></div>';
     }
-    // Overlap handling: layer style — longest event full width, shorter ones layered on top
-    // Sort by duration desc (longest first), then start time asc
+    // Overlap handling: Google Calendar style column packing (side-by-side)
     var events=(timedEvents[d.date]||[]).slice().sort(function(a,b){
-      var durA=a.endH-a.startH,durB=b.endH-b.startH;
-      return durB-durA||a.startH-b.startH;
+      return a.startH-b.startH||(b.endH-b.startH)-(a.endH-a.startH);
     });
-    // Assign z-index and left offset: shorter events get higher z and more left offset
-    var OFFSET_PX=16; // px shift per overlap layer
-    events.forEach(function(e,idx){
-      // Count how many earlier (longer/equal) events this one overlaps with
-      var layer=0;
-      for(var j=0;j<idx;j++){
-        var o=events[j];
-        if(e.startH<o.endH&&e.endH>o.startH) layer++;
+    // Pack events into clusters and assign column / numCols / span
+    var clusterCols=[],clusterEnd=null;
+    function flushCluster(){
+      if(!clusterCols.length)return;
+      var numCols=clusterCols.length;
+      for(var c=0;c<numCols;c++){
+        for(var k=0;k<clusterCols[c].length;k++){
+          var ev=clusterCols[c][k];
+          var span=1;
+          for(var c2=c+1;c2<numCols;c2++){
+            var blocked=false;
+            for(var m=0;m<clusterCols[c2].length;m++){
+              var o=clusterCols[c2][m];
+              if(ev.startH<o.endH&&ev.endH>o.startH){blocked=true;break;}
+            }
+            if(blocked)break;
+            span++;
+          }
+          ev._col=c;ev._numCols=numCols;ev._span=span;
+        }
       }
-      e._layer=layer;
-      e._zIndex=2+layer; // higher layers on top
+      clusterCols=[];clusterEnd=null;
+    }
+    events.forEach(function(e){
+      if(clusterEnd!==null&&e.startH>=clusterEnd)flushCluster();
+      var placed=false;
+      for(var c=0;c<clusterCols.length;c++){
+        var col=clusterCols[c],last=col[col.length-1];
+        if(last.endH<=e.startH){col.push(e);placed=true;break;}
+      }
+      if(!placed)clusterCols.push([e]);
+      clusterEnd=clusterEnd===null?e.endH:Math.max(clusterEnd,e.endH);
     });
-    // Render: longest first (back), shortest last (front)
+    flushCluster();
     events.forEach(function(e){
       var top=(Math.max(e.startH,START_HOUR)-START_HOUR)*HOUR_H;
       var height=Math.max((Math.min(e.endH,END_HOUR)-Math.max(e.startH,START_HOUR))*HOUR_H,20);
       var title=e.title.replace(/"/g,'&quot;').replace(/</g,'&lt;');
-      var leftPx=e._layer*OFFSET_PX;
       var sTime='',eTime='';
       if(e.startH!=null){var sh=Math.floor(e.startH);var sm=Math.round((e.startH-sh)*60);sTime=sh+':'+String(sm).padStart(2,'0');}
       if(e.endH!=null){var eh=Math.floor(e.endH);var em=Math.round((e.endH-eh)*60);eTime=eh+':'+String(em).padStart(2,'0');}
       var dataAttrs=e.isGcal&&e.htmlLink?'data-gcal-link="'+e.htmlLink.replace(/"/g,'&quot;')+'"':'data-task-id="'+e.id+'"';
       var doneStyle=e.isDone?';opacity:0.45;text-decoration:line-through':'';
       var borderColor=e.color;
-      var bgColor=hexToTint(e.color,0.15);
-      var textColor=hexToDark(e.color,0.7);
+      var hasOverlap=e._numCols>1;
+      var bgColor=hexToTint(e.color,hasOverlap?0.28:0.18);
+      var textColor=hexToDark(e.color,0.6);
       var isCompact=height<28;
       var timeStr=sTime?(sTime+(eTime?' – '+eTime:'')):'' ;
       var innerHTML=isCompact
         ?'<span class="gcal-ev-time">'+timeStr+'</span><span class="gcal-ev-title">'+(e.isGcal?'📅 ':'')+e.title+'</span>'
         :'<div class="gcal-ev-title">'+(e.isGcal?'📅 ':'')+e.title+'</div>'+(timeStr?'<div class="gcal-ev-time">'+timeStr+'</div>':'');
-      var layeredCls=e._layer>0?' layered':'';
-      bodyHTML+='<div class="gcal-event'+(e.isLog?' log':'')+(isCompact?' compact':'')+layeredCls+'" '+dataAttrs+' style="top:'+(top+1)+'px;height:'+(height-2)+'px;left:calc('+leftPx+'px + 2px);width:calc(100% - '+(leftPx+4)+'px);z-index:'+e._zIndex+';border-left-color:'+borderColor+';background:'+bgColor+';color:'+textColor+doneStyle+'" title="'+title+'">'+innerHTML+'</div>';
+      var leftPct=(e._col/e._numCols)*100;
+      var widthPct=(e._span/e._numCols)*100;
+      var layeredCls=hasOverlap?' layered':'';
+      bodyHTML+='<div class="gcal-event'+(e.isLog?' log':'')+(isCompact?' compact':'')+layeredCls+'" '+dataAttrs+' style="top:'+(top+1)+'px;height:'+(height-2)+'px;left:calc('+leftPct+'% + 2px);width:calc('+widthPct+'% - 4px);z-index:'+(2+e._col)+';border-left-color:'+borderColor+';background:'+bgColor+';color:'+textColor+doneStyle+'" title="'+title+'">'+innerHTML+'</div>';
     });
     bodyHTML+='</div>';
   });
@@ -3383,7 +3404,10 @@ function renderDetailTodos(t){
     return `
   <div class="detail-todo-item" style="flex-wrap:wrap;gap:4px">
     <div class="todo-check ${td.done?'done':''}" onclick="toggleTodo('${t.id}','${td.id}')">${td.done?'✓':''}</div>
-    <span class="todo-text ${td.done?'done':''}" style="flex:1;min-width:120px">${esc(td.text)}</span>
+    <span class="todo-text ${td.done?'done':''}" style="flex:1;min-width:120px;outline:none;cursor:text"
+      contenteditable="true" spellcheck="false"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+      onblur="renameTodo('${t.id}','${td.id}',this.textContent)">${esc(td.text)}</span>
     <div style="display:flex;align-items:center;gap:3px;margin-left:auto;flex-wrap:wrap">
       <span style="font-size:10px;color:var(--accent);white-space:nowrap">★</span>
       <input type="date" value="${td.actionDate||''}"
@@ -3436,22 +3460,42 @@ function setTodoActionDate(taskId,todoId,date){
   if(ui.view==='home') renderContent();
   else if(ui.selectedTaskId===taskId) renderDetail(taskId);
 }
+const _debounceTimers={};
+function debounceCall(key,fn,delay){
+  clearTimeout(_debounceTimers[key]);
+  _debounceTimers[key]=setTimeout(()=>{delete _debounceTimers[key];fn();},delay);
+}
 function setTodoActionTime(taskId,todoId,field,value){
   const r=getTask(taskId);if(!r)return;
   const td=r.task.todos.find(x=>x.id===todoId);if(!td)return;
   td[field]=value;
   save();
-  // アクションログを更新してGCal同期
+  debounceCall('todoTime|'+todoId+'|'+field,function(){
+    const r2=getTask(taskId);if(!r2)return;
+    const td2=r2.task.todos.find(x=>x.id===todoId);if(!td2)return;
+    if(r2.task.actionLogs){
+      const linkedLog=r2.task.actionLogs.find(l=>l.linkedTodoId===todoId);
+      if(linkedLog){
+        const logField=field==='actionStartTime'?'startTime':field==='actionEndTime'?'endTime':field;
+        linkedLog[logField]=value;
+        save();
+        if(state.gcalConnected&&state.gcalAutoSync&&td2.actionDate) syncActionLogToGcal(r2,linkedLog);
+      }
+    }
+    if(ui.selectedTaskId===taskId) renderDetail(taskId);
+  },800);
+}
+function renameTodo(taskId,todoId,text){
+  const r=getTask(taskId);if(!r)return;
+  const td=r.task.todos.find(x=>x.id===todoId);if(!td)return;
+  const trimmed=(text||'').trim();
+  if(!trimmed||trimmed===td.text)return;
+  td.text=trimmed;
   if(r.task.actionLogs){
     const linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
-    if(linkedLog){
-      // TODOのフィールド名(actionStartTime/actionEndTime)をログのフィールド名(startTime/endTime)にマップ
-      const logField=field==='actionStartTime'?'startTime':field==='actionEndTime'?'endTime':field;
-      linkedLog[logField]=value;
-      save();
-      if(state.gcalConnected&&state.gcalAutoSync&&td.actionDate) syncActionLogToGcal(r,linkedLog);
-    }
+    if(linkedLog) linkedLog.linkedTodoText=trimmed;
   }
+  save();
   if(ui.selectedTaskId===taskId) renderDetail(taskId);
 }
 async function confirmSyncTaskAction(taskId){
@@ -3710,7 +3754,12 @@ function saveDetailField(id,field,value){
   const prevActionDate=prevR?.task?.actionDate||'';
   const prevDueDate=prevR?.task?.dueDate||'';
   updateTask(id,{[field]:trimmed});
-  renderAll();
+  // Time fields debounce the heavy re-render so partial typing isn't blown away
+  if(field==='actionStartTime'||field==='actionEndTime'){
+    debounceCall('detailField|'+id+'|'+field,function(){renderAll();},800);
+  } else {
+    renderAll();
+  }
   const r=getTask(id);
   // Trigger GCal update if dates/times changed — debounced to avoid multiple syncs
   if(r&&r.task.gcal&&state.gcalConnected&&
