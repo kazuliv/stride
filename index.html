@@ -2427,6 +2427,7 @@ function renderMemoDetail(id){
   const panel=document.getElementById('detailPanel');
   const inner=document.getElementById('detailInner');
   panel.classList.remove('hidden');
+  setDetailPanelMode('memo');
   const companyOpts='<option value="">（紐付けなし）</option>'+state.companies.map(c=>'<option value="'+c.id+'"'+(c.id===m.companyId?' selected':'')+'>'+esc(c.name)+'</option>').join('');
   const c=m.companyId?getCompany(m.companyId):null;
   const projOpts='<option value="">（プロジェクトなし）</option>'+((c?.projects||[]).map(p=>'<option value="'+p.id+'"'+(p.id===m.projectId?' selected':'')+'>'+esc(p.name)+'</option>').join(''));
@@ -3244,12 +3245,23 @@ function onListDrop(e){
 }
 
 // ===== DETAIL PANEL =====
+function setDetailPanelMode(mode){
+  const panel=document.getElementById('detailPanel');
+  if(!panel)return;
+  const key=mode==='memo'?'stride_detailMemoW':'stride_detailW';
+  const def=mode==='memo'?640:420;
+  let w=def;
+  try{const s=localStorage.getItem(key);if(s)w=+s;}catch(e){}
+  panel.style.width=w+'px';
+  panel.dataset.mode=mode;
+}
 function renderDetail(id){
   const r=getTask(id);if(!r)return;
   const {task:t,company:c,project:p}=r;
   const panel=document.getElementById('detailPanel');
   const inner=document.getElementById('detailInner');
   panel.classList.remove('hidden');
+  setDetailPanelMode('task');
   const doneCount=t.todos?.filter(x=>x.done).length||0,totalCount=t.todos?.length||0;
   const pct=totalCount?Math.round(doneCount/totalCount*100):0;
   inner.innerHTML=`
@@ -6412,7 +6424,10 @@ document.addEventListener('keydown',e=>{
     handle.classList.remove('dragging');
     document.body.style.cursor='';
     document.body.style.userSelect='';
-    try{localStorage.setItem('stride_detailW',panel.offsetWidth);}catch(e){}
+    try{
+      var key=panel.dataset.mode==='memo'?'stride_detailMemoW':'stride_detailW';
+      localStorage.setItem(key,panel.offsetWidth);
+    }catch(e){}
   });
   // Restore saved width
   try{
