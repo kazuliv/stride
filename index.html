@@ -2884,9 +2884,9 @@ function buildCalplanTaskList(){
       h+='<div class="calplan-dates">';
       h+='<span style="font-size:10px;color:var(--accent);font-weight:700" title="アクション日">★</span>';
       h+='<input type="date" value="'+(t.actionDate||'')+'" onchange="calplanSetDate(\''+t.id+'\',\'actionDate\',this.value)" title="アクション日">';
-      h+='<input type="time" value="'+(t.actionStartTime||'')+'" onchange="calplanSetDate(\''+t.id+'\',\'actionStartTime\',this.value)" title="開始時間">';
+      h+='<input type="time" value="'+(t.actionStartTime||'')+'" onblur="calplanSetDate(\''+t.id+'\',\'actionStartTime\',this.value)" title="開始時間">';
       h+='<span style="font-size:10px;color:var(--text3)">〜</span>';
-      h+='<input type="time" value="'+(t.actionEndTime||'')+'" onchange="calplanSetDate(\''+t.id+'\',\'actionEndTime\',this.value)" title="終了時間">';
+      h+='<input type="time" value="'+(t.actionEndTime||'')+'" onblur="calplanSetDate(\''+t.id+'\',\'actionEndTime\',this.value)" title="終了時間">';
       h+='<span style="font-size:10px;color:var(--text3);margin-left:4px" title="締切日">📅</span>';
       h+='<input type="date" value="'+(t.dueDate||'')+'" onchange="calplanSetDate(\''+t.id+'\',\'dueDate\',this.value)" title="締切日">';
       if(hasCals){
@@ -3314,9 +3314,9 @@ function renderDetail(id){
       <div style="font-size:11px;color:var(--accent);margin-bottom:4px;font-weight:600">★ アクション日（今日のアクションに表示）</div>
       <div style="display:flex;gap:6px;align-items:center">
         <input class="detail-input" type="date" value="${t.actionDate||''}" onchange="saveDetailField('${id}','actionDate',this.value)" style="border-color:var(--accent);flex:1;min-width:100px">
-        <input class="detail-input" type="time" value="${t.actionStartTime||''}" onchange="saveDetailField('${id}','actionStartTime',this.value)" style="border-color:var(--accent);width:84px" placeholder="開始" title="開始時間">
+        <input class="detail-input" type="time" value="${t.actionStartTime||''}" onblur="saveDetailField('${id}','actionStartTime',this.value)" style="border-color:var(--accent);width:84px" placeholder="開始" title="開始時間">
         <span style="font-size:11px;color:var(--text3)">〜</span>
-        <input class="detail-input" type="time" value="${t.actionEndTime||''}" onchange="saveDetailField('${id}','actionEndTime',this.value)" style="border-color:var(--accent);width:84px" placeholder="終了" title="終了時間">
+        <input class="detail-input" type="time" value="${t.actionEndTime||''}" onblur="saveDetailField('${id}','actionEndTime',this.value)" style="border-color:var(--accent);width:84px" placeholder="終了" title="終了時間">
       </div>
       ${state.gcalConnected&&t.gcal&&t.actionDate?`
       <div style="margin-top:5px;display:flex;align-items:center;gap:6px">
@@ -3415,11 +3415,11 @@ function renderDetailTodos(t){
         title="アクション日" onchange="setTodoActionDate('${t.id}','${td.id}',this.value)">
       <input type="time" value="${td.actionStartTime||''}"
         style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:70px"
-        title="開始時間" onchange="setTodoActionTime('${t.id}','${td.id}','actionStartTime',this.value)">
+        title="開始時間" onblur="setTodoActionTime('${t.id}','${td.id}','actionStartTime',this.value)">
       <span style="font-size:9px;color:var(--text3)">〜</span>
       <input type="time" value="${td.actionEndTime||''}"
         style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text2);cursor:pointer;width:70px"
-        title="終了時間" onchange="setTodoActionTime('${t.id}','${td.id}','actionEndTime',this.value)">
+        title="終了時間" onblur="setTodoActionTime('${t.id}','${td.id}','actionEndTime',this.value)">
       ${showGcalBtn?`<button onclick="confirmSyncTodo('${t.id}','${td.id}')" title="${isSynced?'GCalの予定を更新':'GCalに予定を登録'}"
         style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid ${gcalBtnColor};color:${gcalBtnColor};background:transparent;cursor:pointer;white-space:nowrap">${gcalBtnLabel}</button>`:''}
     </div>
@@ -3468,22 +3468,27 @@ function debounceCall(key,fn,delay){
 function setTodoActionTime(taskId,todoId,field,value){
   const r=getTask(taskId);if(!r)return;
   const td=r.task.todos.find(x=>x.id===todoId);if(!td)return;
+  if((td[field]||'')===(value||''))return;
   td[field]=value;
-  save();
-  debounceCall('todoTime|'+todoId+'|'+field,function(){
-    const r2=getTask(taskId);if(!r2)return;
-    const td2=r2.task.todos.find(x=>x.id===todoId);if(!td2)return;
-    if(r2.task.actionLogs){
-      const linkedLog=r2.task.actionLogs.find(l=>l.linkedTodoId===todoId);
-      if(linkedLog){
-        const logField=field==='actionStartTime'?'startTime':field==='actionEndTime'?'endTime':field;
-        linkedLog[logField]=value;
-        save();
-        if(state.gcalConnected&&state.gcalAutoSync&&td2.actionDate) syncActionLogToGcal(r2,linkedLog);
-      }
+  if(!r.task.actionLogs) r.task.actionLogs=[];
+  // Ensure there's a linked action log so GCal sync can reflect the change
+  if(td.actionDate){
+    let linkedLog=r.task.actionLogs.find(l=>l.linkedTodoId===todoId);
+    if(!linkedLog){
+      linkedLog={id:uid(),date:td.actionDate,startTime:td.actionStartTime||'',endTime:td.actionEndTime||'',gcalEventId:'',linkedTodoId:todoId,linkedTodoText:td.text};
+      r.task.actionLogs.push(linkedLog);
+    }else{
+      linkedLog.date=td.actionDate;
+      linkedLog.startTime=td.actionStartTime||'';
+      linkedLog.endTime=td.actionEndTime||'';
+      linkedLog.linkedTodoText=td.text;
     }
-    if(ui.selectedTaskId===taskId) renderDetail(taskId);
-  },800);
+    save();
+    if(state.gcalConnected&&state.gcalAutoSync) syncActionLogToGcal(r,linkedLog);
+  }else{
+    save();
+  }
+  if(ui.selectedTaskId===taskId) renderDetail(taskId);
 }
 function renameTodo(taskId,todoId,text){
   const r=getTask(taskId);if(!r)return;
@@ -3754,12 +3759,7 @@ function saveDetailField(id,field,value){
   const prevActionDate=prevR?.task?.actionDate||'';
   const prevDueDate=prevR?.task?.dueDate||'';
   updateTask(id,{[field]:trimmed});
-  // Time fields debounce the heavy re-render so partial typing isn't blown away
-  if(field==='actionStartTime'||field==='actionEndTime'){
-    debounceCall('detailField|'+id+'|'+field,function(){renderAll();},800);
-  } else {
-    renderAll();
-  }
+  renderAll();
   const r=getTask(id);
   // Trigger GCal update if dates/times changed — debounced to avoid multiple syncs
   if(r&&r.task.gcal&&state.gcalConnected&&
