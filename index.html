@@ -1914,11 +1914,11 @@ function buildHomeWeekGrid(weekDaysParam, todayStrParam, targetGridId){
   // Todos → timed events
   all.forEach(function(t){
     (t.todos||[]).forEach(function(td){
-      if(!td.actionDate||td.done||!td.actionStartTime||!viewDates.includes(td.actionDate)) return;
+      if(!td.actionDate||!td.actionStartTime||!viewDates.includes(td.actionDate)) return;
       var parts=td.actionStartTime.split(':');var sH=parseInt(parts[0])+parseInt(parts[1])/60;
       var eH=sH+1;
       if(td.actionEndTime){var ep=td.actionEndTime.split(':');eH=parseInt(ep[0])+parseInt(ep[1])/60;}
-      timedEvents[td.actionDate].push({id:t.id,title:'★ '+td.text,color:t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)',startH:sH,endH:eH});
+      timedEvents[td.actionDate].push({id:t.id,title:(td.done?'✓ ':'★ ')+td.text,color:t.calColor||t.companyColor||state.calDefaultColor||'var(--accent)',startH:sH,endH:eH,isDone:td.done});
     });
   });
 
